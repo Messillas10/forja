@@ -31,6 +31,16 @@ export default function Home() {
         <button className="btn primary block" onClick={() => start()}>+ Empezar entrenamiento vacío</button>
       )}
 
+      <Link to="/entrenador" className="card link">
+        <div className="row between">
+          <div>
+            <b>Entrenador</b>
+            <div className="muted" style={{ fontSize: '0.85rem' }}>Envía tu resumen semanal o importa rutinas nuevas</div>
+          </div>
+          <span className="muted">›</span>
+        </div>
+      </Link>
+
       <div className="row between">
         <h2>Rutinas</h2>
         <Link to="/rutinas/nueva" className="btn ghost small">+ Nueva rutina</Link>

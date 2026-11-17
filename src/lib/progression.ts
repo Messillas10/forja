@@ -45,10 +45,12 @@ export function sessionE1rm(sets: WorkoutSet[]): number {
  *
  * 1. Detección de estancamiento: si el e1RM cae en 3 sesiones consecutivas → descarga del 10 %
  *    (consenso Delphi sobre descargas: Bell et al., 2023, Sports Medicine - Open).
- * 2. Autorregulación por RPE (Helms et al., 2018, Front Physiol 9:247): si hay RPE registrado,
- *    se calcula el e1RM de la mejor serie y se prescribe la carga para el objetivo de reps/RPE.
- * 3. Doble progresión: si no hay RPE, se sube la carga cuando todas las series llegan al tope del rango;
- *    se mantiene mientras se progresa en reps; se baja ~5 % si se cae por debajo del mínimo.
+ * 2. Autorregulación por RPE (Helms et al., 2018, Front Physiol 9:247): con objetivo de reps casi fijo
+ *    (rango ≤ 2, p. ej. 5×5 @8) y RPE registrado, se calcula el e1RM de la mejor serie y se prescribe
+ *    la carga para las reps/RPE objetivo.
+ * 3. Doble progresión (rangos amplios, p. ej. 8-12): se sube la carga cuando todas las series llegan al
+ *    tope del rango; se mantiene mientras se progresa en reps; se baja ~5 % si se cae por debajo del mínimo.
+ *    Si hay RPE objetivo, actúa de freno: no se sube si las series fueron más duras de lo previsto.
  *
  * @param history sesiones anteriores de este ejercicio, de la más reciente a la más antigua.
  */
@@ -91,7 +93,7 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
 
   // 2. Autorregulación por RPE
   const withRpe = last.filter((s) => s.rpe != null)
-  if (target.targetRpe && withRpe.length > 0) {
+  if (target.targetRpe && withRpe.length > 0 && target.repMax - target.repMin <= 2) {
     const best = Math.max(...withRpe.map((s) => e1rm(s.weight ?? 0, s.reps ?? 0, s.rpe)))
     const w = roundTo(loadForTarget(best, targetReps, target.targetRpe), step)
     const prev = last[0].weight ?? 0
@@ -110,7 +112,7 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
   const top = last.filter((s) => (s.weight ?? 0) === weight)
   const allAtMax = top.every((s) => (s.reps ?? 0) >= target.repMax)
   const anyBelowMin = top.some((s) => (s.reps ?? 0) < target.repMin)
-  const tooHard = target.targetRpe != null && top.some((s) => (s.rpe ?? 0) > target.targetRpe! + 1)
+  const tooHard = target.targetRpe != null && top.some((s) => (s.rpe ?? 0) > target.targetRpe! + 0.5)
 
   if (allAtMax && !tooHard) {
     return {
@@ -119,6 +121,16 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
       method: 'doble',
       action: 'subir',
       reason: `Todas las series a ${target.repMax} reps: +${step.toLocaleString('es')} kg y vuelve a ${target.repMin} reps.`,
+    }
+  }
+  if (allAtMax && tooHard) {
+    return {
+      weight,
+      reps: target.repMax,
+      rpe: target.targetRpe,
+      method: 'doble',
+      action: 'mantener',
+      reason: `Llegaste a ${target.repMax} reps pero más cerca del fallo que el RPE ${target.targetRpe} objetivo: repite el peso y consolida.`,
     }
   }
   if (anyBelowMin) {

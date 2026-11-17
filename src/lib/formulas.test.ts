@@ -83,6 +83,14 @@ describe('progresión', () => {
     expect(s.method).toBe('rpe')
     expect(s.weight).toBeGreaterThan(100)
   })
+  it('rango amplio con RPE: doble progresión, el RPE solo frena', () => {
+    const ok = suggestNext(bench, [mk(80, [10, 10, 10], 8)], { repMin: 6, repMax: 10, targetRpe: 8.5 })!
+    expect(ok.method).toBe('doble')
+    expect(ok.action).toBe('subir')
+    const hard = suggestNext(bench, [mk(80, [10, 10, 10], 10)], { repMin: 6, repMax: 10, targetRpe: 8.5 })!
+    expect(hard.action).toBe('mantener')
+    expect(hard.weight).toBe(80)
+  })
   it('descarga cuando el e1RM cae 3 sesiones seguidas', () => {
     const hist = [mk(80, [6]), mk(80, [7]), mk(80, [8]), mk(80, [9])]
     const s = suggestNext(bench, hist, { repMin: 6, repMax: 10 })!

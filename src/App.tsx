@@ -3,6 +3,7 @@ import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-do
 import { RestBar } from './components/ui'
 import { syncSeedExercises } from './db'
 import ActiveWorkout from './pages/ActiveWorkout'
+import Coach, { ImportRoutines } from './pages/Coach'
 import { ExerciseDetail, ExerciseList } from './pages/Exercises'
 import { HistoryList, WorkoutDetail } from './pages/History'
 import Home from './pages/Home'
@@ -56,6 +57,8 @@ export default function App() {
         <Route path="/ejercicios/:id" element={<ExerciseDetail />} />
         <Route path="/progreso" element={<Progress />} />
         <Route path="/herramientas" element={<Tools />} />
+        <Route path="/entrenador" element={<Coach />} />
+        <Route path="/importar/:code" element={<ImportRoutines />} />
       </Routes>
       <TabBar />
       <RestBar />

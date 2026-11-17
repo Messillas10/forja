@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useState } from 'react'
 import { fmtKg, LineChart } from '../components/ui'
 import { MUSCLE_LABEL } from '../data/exercises'
 import { db } from '../db'
@@ -76,6 +77,8 @@ export default function Progress() {
         <div className="stat"><b>{fmtKg(weeklyTonnage[11].y)}</b><small>kg esta semana</small></div>
       </div>
 
+      <BodyWeightCard />
+
       <div className="card">
         <h3>Series semanales por músculo</h3>
         <small>Últimos 7 días. Zona verde: {WEEKLY_SETS_TARGET.min}–{WEEKLY_SETS_TARGET.max} series. Músculo secundario cuenta ×{SECONDARY_MUSCLE_FACTOR}.</small>
@@ -120,6 +123,59 @@ export default function Progress() {
         )}
         <p className="ref">Carga = RPE sesión × minutos (Foster et al., 2001). Medias exponenciales 7/28 días (Williams et al., 2017). Indicador orientativo: su capacidad para predecir lesiones está discutida (Impellizzeri et al., 2020).</p>
       </div>
+    </div>
+  )
+}
+
+/** Peso corporal: lo relevante es la media semanal, no el pesaje suelto (fluctúa 1-2 kg por agua y glucógeno). */
+function BodyWeightCard() {
+  const weights = useLiveQuery(() => db.bodyweights.orderBy('date').toArray())
+  const [kg, setKg] = useState('')
+  if (!weights) return null
+  const now = Date.now()
+  const avg = (l: number[]) => (l.length ? l.reduce((a, b) => a + b, 0) / l.length : null)
+  const thisWeek = avg(weights.filter((w) => w.date > now - 7 * DAY).map((w) => w.kg))
+  const prevWeek = avg(weights.filter((w) => w.date <= now - 7 * DAY && w.date > now - 14 * DAY).map((w) => w.kg))
+  const weekly = new Map<number, number[]>()
+  for (const w of weights) {
+    const wk = startOfWeek(w.date)
+    weekly.set(wk, [...(weekly.get(wk) ?? []), w.kg])
+  }
+  const points = [...weekly.entries()].sort((a, b) => a[0] - b[0]).map(([x, l]) => ({ x, y: avg(l)! }))
+
+  async function save() {
+    const v = Number(kg.replace(',', '.'))
+    if (!v || v < 25 || v > 300) return
+    await db.bodyweights.add({ date: Date.now(), kg: v })
+    setKg('')
+  }
+
+  return (
+    <div className="card">
+      <h3>Peso corporal</h3>
+      <small>Pésate en ayunas, tras ir al baño, varias veces por semana. Cuenta la media semanal.</small>
+      <div className="row">
+        <input className="input grow" inputMode="decimal" placeholder="Peso de hoy (kg)" value={kg} onChange={(e) => setKg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
+        <button className="btn primary" onClick={save} disabled={!kg}>Guardar</button>
+      </div>
+      {thisWeek != null && (
+        <div className="stat-grid">
+          <div className="stat"><b>{thisWeek.toFixed(1)}</b><small>Media 7 días (kg)</small></div>
+          {prevWeek != null && <div className="stat"><b>{(thisWeek - prevWeek >= 0 ? '+' : '') + (thisWeek - prevWeek).toFixed(2)}</b><small>vs semana anterior</small></div>}
+        </div>
+      )}
+      {points.length >= 2 && <LineChart points={points} unit="kg" height={120} />}
+      {weights.length > 0 && (
+        <details>
+          <summary className="muted" style={{ cursor: 'pointer' }}>Registros ({weights.length})</summary>
+          {[...weights].reverse().slice(0, 30).map((w) => (
+            <div key={w.id} className="row between" style={{ fontSize: '0.85rem', padding: '4px 0' }}>
+              <span>{new Date(w.date).toLocaleDateString('es')} · {w.kg} kg</span>
+              <button className="btn danger small" onClick={() => db.bodyweights.delete(w.id!)}>Borrar</button>
+            </div>
+          ))}
+        </details>
+      )}
     </div>
   )
 }

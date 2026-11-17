@@ -84,6 +84,8 @@ Los rangos de las plantillas de rutina son fuerza 3–5 @8, hipertrofia 8–12 @
 | `/historial`, `/historial/:id` | Sesiones, resumen, récords de e1RM y carga sRPE |
 | `/ejercicios`, `/ejercicios/:id` | 88 ejercicios con búsqueda y filtros. Por ejercicio: gráfica de e1RM, récords y calculadora de carga por RPE |
 | `/progreso` | Series por músculo frente a la zona 10–20, volumen semanal y ACWR |
+| `/entrenador` | Resumen semanal para el entrenador (compartir, descargar o copiar) e importación de rutinas |
+| `/importar/:code` | Revisión e importación de rutinas recibidas por enlace |
 | `/herramientas` | 1RM (7 fórmulas), %1RM con INOL, calculadora de discos, tabla RPE y copias de seguridad |
 
 ## 7. Hoja de ruta
@@ -91,9 +93,17 @@ Los rangos de las plantillas de rutina son fuerza 3–5 @8, hipertrofia 8–12 @
 - [x] MVP: registro, rutinas, historial, progresión, estadísticas y PWA offline
 - [ ] Superseries (agrupar ejercicios)
 - [ ] Notas por ejercicio y por serie
-- [ ] Peso corporal y medidas, con fuerza relativa y DOTS
+- [x] Registro de peso corporal con media semanal
+- [x] Ciclo con el entrenador: resumen semanal → análisis de Claude (`/entrenador`) → rutinas por enlace o QR
+- [ ] Medidas corporales, fuerza relativa y DOTS
 - [ ] Mesociclos con descarga programada cada 4–6 semanas
 - [ ] Gráficas por músculo (tendencia del e1RM medio)
 - [ ] Sincronización opcional con Supabase y varios dispositivos
 - [ ] Unidades en libras
 - [ ] Notificación al terminar el descanso con la app en segundo plano
+
+## 8. Ciclo con el entrenador
+
+1. En la app, **Entrenador → Compartir resumen**. Se genera un texto con las sesiones, los e1RM, las series por músculo, el peso corporal, las rutinas (con los IDs de cada ejercicio) y los comentarios del atleta.
+2. En el ordenador, la skill `/entrenador` de Claude Code lo analiza junto con el perfil y los informes anteriores, que están en un espacio privado fuera de este repositorio.
+3. Si hay cambios, genera un enlace `#/importar/<código>`: es JSON comprimido con deflate-raw y codificado en base64url (ver `src/lib/routineShare.ts`). Al ir en el fragmento `#`, los datos no pasan por ningún servidor. Al abrirlo, la app muestra las rutinas y se importan con un toque.

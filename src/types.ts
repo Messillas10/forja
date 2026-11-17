@@ -107,3 +107,10 @@ export interface WorkoutExerciseMeta {
   targetRpe?: number
   restSec: number
 }
+
+export interface BodyWeight {
+  id?: number
+  /** Marca de tiempo de la medición. */
+  date: number
+  kg: number
+}

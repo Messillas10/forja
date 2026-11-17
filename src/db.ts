@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { SEED_EXERCISES } from './data/exercises'
-import type { Exercise, Routine, Workout, WorkoutExerciseMeta, WorkoutSet } from './types'
+import type { BodyWeight, Exercise, Routine, Workout, WorkoutExerciseMeta, WorkoutSet } from './types'
 
 export const db = new Dexie('forja') as Dexie & {
   exercises: EntityTable<Exercise, 'id'>
@@ -8,6 +8,7 @@ export const db = new Dexie('forja') as Dexie & {
   sets: EntityTable<WorkoutSet, 'id'>
   routines: EntityTable<Routine, 'id'>
   workoutExercises: EntityTable<WorkoutExerciseMeta, 'id'>
+  bodyweights: EntityTable<BodyWeight, 'id'>
 }
 
 db.version(1).stores({
@@ -16,6 +17,10 @@ db.version(1).stores({
   sets: '++id, workoutId, exerciseId, [workoutId+exerciseOrder], [exerciseId+workoutId]',
   routines: '++id, name',
   workoutExercises: '++id, workoutId, [workoutId+exerciseOrder]',
+})
+
+db.version(2).stores({
+  bodyweights: '++id, date',
 })
 
 db.on('populate', (tx) => {
@@ -123,17 +128,19 @@ export async function exportAll() {
     sets: await db.sets.toArray(),
     routines: await db.routines.toArray(),
     workoutExercises: await db.workoutExercises.toArray(),
+    bodyweights: await db.bodyweights.toArray(),
   }
 }
 
-export async function importAll(data: Awaited<ReturnType<typeof exportAll>>) {
+export async function importAll(data: Omit<Awaited<ReturnType<typeof exportAll>>, 'bodyweights'> & { bodyweights?: BodyWeight[] }) {
   if (data.app !== 'forja') throw new Error('El archivo no es una copia de Forja')
-  await db.transaction('rw', [db.exercises, db.workouts, db.sets, db.routines, db.workoutExercises], async () => {
-    await Promise.all([db.workouts.clear(), db.sets.clear(), db.routines.clear(), db.workoutExercises.clear()])
+  await db.transaction('rw', [db.exercises, db.workouts, db.sets, db.routines, db.workoutExercises, db.bodyweights], async () => {
+    await Promise.all([db.workouts.clear(), db.sets.clear(), db.routines.clear(), db.workoutExercises.clear(), db.bodyweights.clear()])
     await db.exercises.bulkPut(data.exercises)
     await db.workouts.bulkAdd(data.workouts)
     await db.sets.bulkAdd(data.sets)
     await db.routines.bulkAdd(data.routines)
     await db.workoutExercises.bulkAdd(data.workoutExercises)
+    await db.bodyweights.bulkAdd(data.bodyweights ?? [])
   })
 }
