@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Icon } from '../components/icons'
+import { TopBar } from '../components/ui'
 import { db } from '../db'
 import { decodeRoutines } from '../lib/routineShare'
 import { buildSummary } from '../lib/summary'
@@ -32,7 +34,6 @@ export default function Coach() {
     }
   }, [notes])
 
-  // Se regenera al cambiar datos, días o notas.
   const dataVersion = useLiveQuery(async () => `${await db.sets.count()}-${await db.workouts.count()}-${await db.bodyweights.count()}`)
   useEffect(() => {
     buildSummary(days, notes).then(setText)
@@ -46,8 +47,9 @@ export default function Coach() {
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Resumen Forja' })
       else if (navigator.share) await navigator.share({ title: 'Resumen Forja', text })
       else download()
+      setMsg('')
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') setMsg('No se pudo compartir; usa Descargar o Copiar.')
+      if ((e as Error).name !== 'AbortError') setMsg('Este navegador no deja compartir. Usa Descargar o Copiar.')
     }
   }
   function download() {
@@ -56,48 +58,55 @@ export default function Coach() {
     a.download = fileName
     a.click()
     URL.revokeObjectURL(a.href)
+    setMsg('Resumen descargado.')
   }
   async function copy() {
     try {
       await navigator.clipboard.writeText(text)
-      setMsg('Copiado.')
+      setMsg('Resumen copiado.')
     } catch {
-      setMsg('No se pudo copiar.')
+      setMsg('No se pudo copiar. Usa Descargar.')
     }
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <button className="btn ghost small" onClick={() => navigate(-1)}>← Volver</button>
+    <div className="page" style={{ paddingTop: 8 }}>
+      <div>
+        <TopBar />
+        <h1 className="display title">Entrenador</h1>
+        <p className="small muted" style={{ marginTop: 6 }}>Cada semana envías tus datos, el entrenador los analiza y te devuelve los ajustes de tus rutinas.</p>
       </div>
-      <h1>Entrenador</h1>
-      <div className="card">
-        <h3>1. Enviar resumen</h3>
-        <small>Cuéntale lo que no ve en los números: partidos, molestias, sueño, estrés, días que no pudiste ir…</small>
-        <textarea className="input" rows={4} placeholder="Ej.: partido el sábado; algo de carga en el isquio derecho; dormí poco el miércoles." value={notes} onChange={(e) => setNotes(e.target.value)} />
-        <div className="chips">
+
+      <section className="section">
+        <h2 className="h2">1. Envía tu semana</h2>
+        <label className="stack small muted">
+          Lo que no se ve en los números
+          <textarea className="field" rows={4} style={{ color: 'var(--ink)' }} placeholder="Partido el sábado. Molestia en el isquio derecho. Dormí poco el miércoles." value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
+        <div className="segmented" role="group" aria-label="Periodo">
           {[7, 14, 28].map((n) => (
-            <button key={n} className={`chip${days === n ? ' on' : ''}`} onClick={() => setDays(n)}>Últimos {n} días</button>
+            <button key={n} className={days === n ? 'on' : undefined} aria-pressed={days === n} onClick={() => setDays(n)}>{n} días</button>
           ))}
         </div>
-        <button className="btn primary block" onClick={share} disabled={!text}>Compartir resumen</button>
+        <button className="btn primary lg block-w" onClick={share} disabled={!text}><Icon name="share" />Compartir resumen</button>
         <div className="row">
-          <button className="btn grow" onClick={download}>Descargar</button>
-          <button className="btn grow" onClick={copy}>Copiar</button>
+          <button className="btn outline grow" onClick={download}>Descargar</button>
+          <button className="btn outline grow" onClick={copy}>Copiar</button>
         </div>
-        {msg && <small>{msg}</small>}
+        {msg && <p className="small" role="status">{msg}</p>}
+        <p className="tiny muted">En el menú de compartir, elige «Guardar en Drive»: el entrenador lo encuentra solo.</p>
         <details>
-          <summary className="muted" style={{ cursor: 'pointer' }}>Ver lo que se envía</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.75rem', color: 'var(--text-2)' }}>{text}</pre>
+          <summary>Ver lo que se envía</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.75rem', color: 'var(--steel)', fontFamily: 'inherit', fontStretch: '85%' }}>{text}</pre>
         </details>
-      </div>
-      <div className="card">
-        <h3>2. Importar rutinas del entrenador</h3>
-        <small>Abre el enlace que te dé el entrenador, o pégalo aquí.</small>
-        <input className="input" placeholder="Pega el enlace o el código" value={code} onChange={(e) => setCode(e.target.value)} />
-        <button className="btn block" disabled={!code.trim()} onClick={() => navigate(`/importar/${encodeURIComponent(code.trim().split('/importar/').pop()!)}`)}>Revisar e importar</button>
-      </div>
+      </section>
+
+      <section className="section">
+        <h2 className="h2">2. Importa sus ajustes</h2>
+        <p className="small muted">Abre el enlace o escanea el QR que te dé el entrenador. También puedes pegarlo aquí.</p>
+        <input className="field" placeholder="Pega el enlace" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Enlace de rutinas" />
+        <button className="btn ink block-w" disabled={!code.trim()} onClick={() => navigate(`/importar/${encodeURIComponent(code.trim().split('/importar/').pop()!)}`)}>Revisar rutinas</button>
+      </section>
     </div>
   )
 }
@@ -111,7 +120,7 @@ export function ImportRoutines() {
   const exercises = useLiveQuery(() => db.exercises.toArray().then((l) => new Map(l.map((e) => [e.id, e.name]))))
 
   useEffect(() => {
-    decodeRoutines(code ?? '').then(setRoutines).catch(() => setError('El enlace no es válido o está incompleto.'))
+    decodeRoutines(code ?? '').then(setRoutines).catch(() => setError('Este enlace no es válido o está cortado. Pide al entrenador que lo genere de nuevo.'))
   }, [code])
 
   async function doImport() {
@@ -127,36 +136,41 @@ export function ImportRoutines() {
     navigate('/', { replace: true })
   }
 
-  if (error) return <div className="page"><p className="empty">{error}</p><button className="btn" onClick={() => navigate('/')}>Volver</button></div>
+  if (error) return <div className="page"><TopBar back="/" /><div className="empty"><h1 className="display title">Enlace no válido</h1><p>{error}</p></div></div>
   if (!routines || !exercises) return null
   const unknown = routines.flatMap((r) => r.exercises).filter((e) => !exercises.has(e.exerciseId))
 
   return (
-    <div className="page">
-      <h1>Importar rutinas</h1>
+    <div className="page" style={{ paddingTop: 8, paddingBottom: 'calc(40px + var(--safe-b))' }}>
+      <div>
+        <TopBar back="/" />
+        <h1 className="display title">Rutinas nuevas</h1>
+        <p className="small muted" style={{ marginTop: 6 }}>Revísalas antes de importarlas.</p>
+      </div>
       {routines.map((r) => (
-        <div key={r.name} className="card">
-          <b>{r.name}</b>
-          <table className="plain">
-            <thead><tr><th>Ejercicio</th><th>Series</th><th>Reps</th><th>RPE</th><th>Desc.</th></tr></thead>
+        <section key={r.name} className="section">
+          <h2 className="h2">{r.name}</h2>
+          <table className="data">
+            <thead><tr><th>Ejercicio</th><th>Series</th><th>Reps</th><th>Desc.</th></tr></thead>
             <tbody>
               {r.exercises.map((e, i) => (
                 <tr key={i} style={exercises.has(e.exerciseId) ? undefined : { color: 'var(--danger)' }}>
-                  <td>{exercises.get(e.exerciseId) ?? `${e.exerciseId} (no existe)`}</td>
-                  <td>{e.sets}</td>
+                  <td style={{ fontStretch: '100%' }}>{exercises.get(e.exerciseId) ?? `${e.exerciseId} (no existe)`}</td>
+                  <td className="strong">{e.sets}</td>
                   <td>{e.repMin}–{e.repMax}</td>
-                  <td>{e.targetRpe ?? '–'}</td>
-                  <td>{e.restSec}s</td>
+                  <td>{e.restSec >= 60 ? `${Math.floor(e.restSec / 60)}:${String(e.restSec % 60).padStart(2, '0')}` : `${e.restSec}s`}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       ))}
-      {unknown.length > 0 && <small style={{ color: 'var(--warn)' }}>Los ejercicios en rojo no existen en tu catálogo y se omitirán.</small>}
-      <label className="row"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Reemplazar las rutinas que tengan el mismo nombre</label>
-      <button className="btn primary block" onClick={doImport}>Importar {routines.length} rutina{routines.length > 1 ? 's' : ''}</button>
-      <button className="btn ghost block" onClick={() => navigate('/')}>Cancelar</button>
+      {unknown.length > 0 && <p className="small" style={{ color: 'var(--warn)' }}>Los ejercicios en rojo no están en tu catálogo y no se importarán.</p>}
+      <label className="row small" style={{ gap: 10 }}>
+        <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--ember)' }} />
+        Sustituir las rutinas que se llamen igual
+      </label>
+      <button className="btn primary lg block-w" onClick={doImport}>Importar {routines.length} {routines.length === 1 ? 'rutina' : 'rutinas'}</button>
     </div>
   )
 }

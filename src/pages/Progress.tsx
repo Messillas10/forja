@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { fmtKg, LineChart } from '../components/ui'
+import { Figure, fmtKg, LineChart } from '../components/ui'
 import { MUSCLE_LABEL } from '../data/exercises'
 import { db } from '../db'
 import { acwrEwma, SECONDARY_MUSCLE_FACTOR, sessionLoad, tonnage, WEEKLY_SETS_TARGET } from '../lib/formulas'
@@ -23,26 +23,25 @@ export default function Progress() {
     const workouts = (await db.workouts.toArray()).filter((w) => w.endedAt)
     const sets = (await db.sets.toArray()).filter((s) => s.done && s.kind !== 'warmup')
     const exercises = new Map((await db.exercises.toArray()).map((e) => [e.id, e]))
-    return { workouts, sets, exercises }
+    return { workouts, sets, exercises, now: Date.now() }
   })
   if (!data) return null
-  const { workouts, sets, exercises } = data
-  const now = Date.now()
+  const { workouts, sets, exercises, now } = data
   const wById = new Map(workouts.map((w) => [w.id!, w]))
 
-  // Series efectivas en los últimos 7 días por músculo (cómputo fraccional).
-  const weekAgo = now - 7 * DAY
+  // Series efectivas de los últimos 7 días por músculo (cómputo fraccional).
   const muscleSets = new Map<Muscle, number>()
   for (const s of sets) {
     const w = wById.get(s.workoutId)
-    if (!w || w.startedAt < weekAgo) continue
+    if (!w || w.startedAt < now - 7 * DAY) continue
     const ex = exercises.get(s.exerciseId)
     if (!ex) continue
     muscleSets.set(ex.primary, (muscleSets.get(ex.primary) ?? 0) + 1)
     for (const m of ex.secondary) muscleSets.set(m, (muscleSets.get(m) ?? 0) + SECONDARY_MUSCLE_FACTOR)
   }
+  const muscles = (Object.keys(MUSCLE_LABEL) as Muscle[]).map((m) => [m, muscleSets.get(m) ?? 0] as const).sort((a, b) => b[1] - a[1])
 
-  // Tonelaje semanal (12 semanas).
+  // Volumen semanal (12 semanas).
   const thisWeek = startOfWeek(now)
   const weeks = Array.from({ length: 12 }, (_, i) => thisWeek - (11 - i) * 7 * DAY)
   const weeklyTonnage = weeks.map((wk) => ({
@@ -55,7 +54,7 @@ export default function Progress() {
   const firstWorkout = Math.min(...workouts.map((w) => w.startedAt))
   const tonnagePoints = weeklyTonnage.filter((p) => p.x + 7 * DAY > firstWorkout)
 
-  // ACWR con carga sRPE diaria (requiere RPE de sesión).
+  // Carga aguda:crónica con carga sRPE diaria.
   const withRpe = workouts.filter((w) => w.sessionRpe)
   let acwr: ReturnType<typeof acwrEwma> | null = null
   if (withRpe.length) {
@@ -67,72 +66,78 @@ export default function Progress() {
   }
 
   const last28 = workouts.filter((w) => w.startedAt > now - 28 * DAY).length
+  const max = 24
 
   return (
     <div className="page">
-      <h1>Progreso</h1>
-      <div className="stat-grid">
-        <div className="stat"><b>{workouts.length}</b><small>Entrenos totales</small></div>
-        <div className="stat"><b>{(last28 / 4).toFixed(1)}</b><small>Entrenos/semana (últ. 4)</small></div>
-        <div className="stat"><b>{fmtKg(weeklyTonnage[11].y)}</b><small>kg esta semana</small></div>
+      <h1 className="display title">Progreso</h1>
+      <div className="figures">
+        <Figure value={(last28 / 4).toLocaleString('es', { maximumFractionDigits: 1 })} label="Entrenos por semana" />
+        <Figure value={fmtKg(weeklyTonnage[11].y)} label="kg esta semana" />
+        <Figure value={workouts.length} label="Entrenos en total" />
       </div>
 
       <BodyWeightCard />
 
-      <div className="card">
-        <h3>Series semanales por músculo</h3>
-        <small>Últimos 7 días. Zona verde: {WEEKLY_SETS_TARGET.min}–{WEEKLY_SETS_TARGET.max} series. Músculo secundario cuenta ×{SECONDARY_MUSCLE_FACTOR}.</small>
-        {(Object.keys(MUSCLE_LABEL) as Muscle[]).map((m) => {
-          const v = muscleSets.get(m) ?? 0
-          const max = 25
-          const color = v >= WEEKLY_SETS_TARGET.min && v <= WEEKLY_SETS_TARGET.max ? 'var(--ok)' : v > WEEKLY_SETS_TARGET.max ? 'var(--warn)' : 'var(--accent)'
-          return (
-            <div key={m} className="stack" style={{ gap: 4 }}>
-              <div className="row between" style={{ fontSize: '0.85rem' }}>
-                <span>{MUSCLE_LABEL[m]}</span>
-                <span className="muted">{v % 1 ? v.toFixed(1) : v}</span>
+      <section className="section">
+        <div className="section-head">
+          <h2 className="h2">Series por músculo</h2>
+          <span className="small muted">Últimos 7 días</span>
+        </div>
+        <p className="small muted">La zona verde es lo recomendado para ganar músculo: entre {WEEKLY_SETS_TARGET.min} y {WEEKLY_SETS_TARGET.max} series a la semana.</p>
+        <div className="block" style={{ gap: 14 }}>
+          {muscles.map(([m, v]) => {
+            const cls = v >= WEEKLY_SETS_TARGET.min && v <= WEEKLY_SETS_TARGET.max ? 'ok' : v > WEEKLY_SETS_TARGET.max ? 'over' : ''
+            return (
+              <div key={m} className="stack" style={{ gap: 5 }}>
+                <div className="row between small">
+                  <span style={{ fontWeight: 550 }}>{MUSCLE_LABEL[m]}</span>
+                  <span className="num" style={{ fontSize: '1.05rem', color: v ? 'var(--ink)' : 'var(--steel)' }}>{v.toLocaleString('es', { maximumFractionDigits: 1 })}</span>
+                </div>
+                <div className="meter" role="img" aria-label={`${MUSCLE_LABEL[m]}: ${v} series`}>
+                  <div className="zone" style={{ left: `${(WEEKLY_SETS_TARGET.min / max) * 100}%`, width: `${((WEEKLY_SETS_TARGET.max - WEEKLY_SETS_TARGET.min) / max) * 100}%` }} />
+                  <div className={`fill ${cls}`} style={{ width: `${Math.min(100, (v / max) * 100)}%` }} />
+                </div>
               </div>
-              <div className="meter">
-                <div className="zone" style={{ left: `${(WEEKLY_SETS_TARGET.min / max) * 100}%`, width: `${((WEEKLY_SETS_TARGET.max - WEEKLY_SETS_TARGET.min) / max) * 100}%` }} />
-                <span style={{ width: `${Math.min(100, (v / max) * 100)}%`, background: color }} />
-              </div>
-            </div>
-          )
-        })}
-        <p className="ref">Schoenfeld, Ogborn & Krieger (2017), J Sports Sci 35(11): relación dosis-respuesta, ≥10 series/sem. Pelland et al. (2024): rendimientos decrecientes y conteo fraccional.</p>
-      </div>
+            )
+          })}
+        </div>
+        <p className="ref">Un ejercicio cuenta como serie entera para su músculo principal y como media para los secundarios. Schoenfeld, Ogborn y Krieger (2017); Pelland et al. (2024).</p>
+      </section>
 
-      <div className="card">
-        <h3>Volumen semanal (kg)</h3>
+      <section className="section">
+        <h2 className="h2">Volumen semanal</h2>
         <LineChart points={tonnagePoints} unit="kg" />
-      </div>
+      </section>
 
-      <div className="card">
-        <h3>Carga aguda : crónica</h3>
+      <section className="section">
+        <h2 className="h2">Carga de entrenamiento</h2>
         {acwr?.ratio != null ? (
-          <>
-            <div className="row" style={{ gap: 16 }}>
-              <b style={{ fontSize: '2rem', color: acwr.ratio > 1.5 ? 'var(--danger)' : acwr.ratio > 1.3 || acwr.ratio < 0.8 ? 'var(--warn)' : 'var(--ok)' }}>{acwr.ratio.toFixed(2)}</b>
-              <small>
-                {acwr.ratio > 1.5 ? 'Pico de carga: considera bajar volumen esta semana.' : acwr.ratio > 1.3 ? 'Carga subiendo rápido.' : acwr.ratio < 0.8 ? 'Carga por debajo de tu habitual (¿descarga o desentreno?).' : 'Carga estable respecto a tu base.'}
-              </small>
+          <div className="block">
+            <div className="row" style={{ gap: 16, alignItems: 'center' }}>
+              <span className="num" style={{ fontSize: '2.75rem', lineHeight: 1, color: acwr.ratio > 1.5 ? 'var(--danger)' : acwr.ratio > 1.3 || acwr.ratio < 0.8 ? 'var(--warn)' : 'var(--done)' }}>
+                {acwr.ratio.toFixed(2).replace('.', ',')}
+              </span>
+              <p className="small">
+                {acwr.ratio > 1.5 ? 'Has subido la carga muy deprisa. Considera aflojar esta semana.' : acwr.ratio > 1.3 ? 'La carga está subiendo rápido.' : acwr.ratio < 0.8 ? 'Entrenas menos que de costumbre: descarga, descanso o semana floja.' : 'Carga estable respecto a tus últimas semanas.'}
+              </p>
             </div>
-          </>
+          </div>
         ) : (
-          <small>Necesitas al menos 3 semanas de entrenos con RPE de sesión (se pide al terminar).</small>
+          <p className="small muted">Compara tu última semana con tu media del mes. Aparece tras 3 semanas puntuando el esfuerzo al terminar cada entreno.</p>
         )}
-        <p className="ref">Carga = RPE sesión × minutos (Foster et al., 2001). Medias exponenciales 7/28 días (Williams et al., 2017). Indicador orientativo: su capacidad para predecir lesiones está discutida (Impellizzeri et al., 2020).</p>
-      </div>
+        <p className="ref">Carga = esfuerzo (1–10) × minutos (Foster et al., 2001), con medias de 7 y 28 días (Williams et al., 2017). Úsalo como tendencia: no predice lesiones de forma fiable (Impellizzeri et al., 2020).</p>
+      </section>
     </div>
   )
 }
 
-/** Peso corporal: lo relevante es la media semanal, no el pesaje suelto (fluctúa 1-2 kg por agua y glucógeno). */
+/** Peso corporal: cuenta la media semanal, no el pesaje suelto (fluctúa 1–2 kg por agua y glucógeno). */
 function BodyWeightCard() {
   const weights = useLiveQuery(() => db.bodyweights.orderBy('date').toArray())
   const [kg, setKg] = useState('')
+  const [now] = useState(() => Date.now())
   if (!weights) return null
-  const now = Date.now()
   const avg = (l: number[]) => (l.length ? l.reduce((a, b) => a + b, 0) / l.length : null)
   const thisWeek = avg(weights.filter((w) => w.date > now - 7 * DAY).map((w) => w.kg))
   const prevWeek = avg(weights.filter((w) => w.date <= now - 7 * DAY && w.date > now - 14 * DAY).map((w) => w.kg))
@@ -142,6 +147,7 @@ function BodyWeightCard() {
     weekly.set(wk, [...(weekly.get(wk) ?? []), w.kg])
   }
   const points = [...weekly.entries()].sort((a, b) => a[0] - b[0]).map(([x, l]) => ({ x, y: avg(l)! }))
+  const delta = thisWeek != null && prevWeek != null ? thisWeek - prevWeek : null
 
   async function save() {
     const v = Number(kg.replace(',', '.'))
@@ -151,31 +157,34 @@ function BodyWeightCard() {
   }
 
   return (
-    <div className="card">
-      <h3>Peso corporal</h3>
-      <small>Pésate en ayunas, tras ir al baño, varias veces por semana. Cuenta la media semanal.</small>
-      <div className="row">
-        <input className="input grow" inputMode="decimal" placeholder="Peso de hoy (kg)" value={kg} onChange={(e) => setKg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
-        <button className="btn primary" onClick={save} disabled={!kg}>Guardar</button>
+    <section className="section">
+      <h2 className="h2">Peso corporal</h2>
+      <div className="block">
+        <form className="row" onSubmit={(e) => { e.preventDefault(); save() }}>
+          <input className="field grow num" style={{ fontSize: '1.25rem' }} inputMode="decimal" placeholder="Peso de hoy, kg" value={kg} onChange={(e) => setKg(e.target.value)} aria-label="Peso de hoy en kg" />
+          <button className="btn ink" disabled={!kg}>Guardar</button>
+        </form>
+        {thisWeek != null ? (
+          <div className="figures">
+            <Figure value={fmtKg(thisWeek)} label="Media de 7 días (kg)" />
+            {delta != null && <Figure value={`${delta >= 0 ? '+' : '−'}${fmtKg(Math.abs(delta))}`} label="Frente a la semana anterior" />}
+          </div>
+        ) : (
+          <p className="small muted">Pésate en ayunas, después de ir al baño, varias veces por semana. Lo que cuenta es la media.</p>
+        )}
+        {points.length >= 2 && <LineChart points={points} unit="kg" height={120} />}
+        {weights.length > 0 && (
+          <details>
+            <summary>Registros ({weights.length})</summary>
+            {[...weights].reverse().slice(0, 30).map((w) => (
+              <div key={w.id} className="row between small" style={{ padding: '4px 0' }}>
+                <span>{new Date(w.date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}, <b className="num" style={{ fontSize: '1rem' }}>{fmtKg(w.kg)}</b> kg</span>
+                <button className="btn danger sm" onClick={() => db.bodyweights.delete(w.id!)}>Borrar</button>
+              </div>
+            ))}
+          </details>
+        )}
       </div>
-      {thisWeek != null && (
-        <div className="stat-grid">
-          <div className="stat"><b>{thisWeek.toFixed(1)}</b><small>Media 7 días (kg)</small></div>
-          {prevWeek != null && <div className="stat"><b>{(thisWeek - prevWeek >= 0 ? '+' : '') + (thisWeek - prevWeek).toFixed(2)}</b><small>vs semana anterior</small></div>}
-        </div>
-      )}
-      {points.length >= 2 && <LineChart points={points} unit="kg" height={120} />}
-      {weights.length > 0 && (
-        <details>
-          <summary className="muted" style={{ cursor: 'pointer' }}>Registros ({weights.length})</summary>
-          {[...weights].reverse().slice(0, 30).map((w) => (
-            <div key={w.id} className="row between" style={{ fontSize: '0.85rem', padding: '4px 0' }}>
-              <span>{new Date(w.date).toLocaleDateString('es')} · {w.kg} kg</span>
-              <button className="btn danger small" onClick={() => db.bodyweights.delete(w.id!)}>Borrar</button>
-            </div>
-          ))}
-        </details>
-      )}
-    </div>
+    </section>
   )
 }

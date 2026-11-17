@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react'
 import { EQUIPMENT_LABEL, MUSCLE_LABEL } from '../data/exercises'
 import { db } from '../db'
 import type { Equipment, Exercise, Muscle } from '../types'
-import { initials, Sheet } from './ui'
+import { Icon } from './icons'
+import { Sheet } from './ui'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -14,18 +15,22 @@ export function useExerciseFilter(exercises: Exercise[] | undefined) {
     const nq = norm(q.trim())
     return (exercises ?? [])
       .filter((e) => !muscle || e.primary === muscle || e.secondary.includes(muscle))
-      .filter((e) => !nq || nq.split(' ').every((t) => norm(`${e.name} ${EQUIPMENT_LABEL[e.equipment]} ${MUSCLE_LABEL[e.primary]}`).includes(t)))
+      .filter((e) => !nq || nq.split(/\s+/).every((t) => norm(`${e.name} ${EQUIPMENT_LABEL[e.equipment]} ${MUSCLE_LABEL[e.primary]}`).includes(t)))
       .sort((a, b) => Number(b.primary === muscle) - Number(a.primary === muscle) || a.name.localeCompare(b.name, 'es'))
   }, [exercises, q, muscle])
   return { q, setQ, muscle, setMuscle, filtered }
 }
 
+export function exerciseMeta(e: Exercise) {
+  return `${MUSCLE_LABEL[e.primary]}, ${EQUIPMENT_LABEL[e.equipment].toLowerCase()}`
+}
+
 export function MuscleChips({ value, onChange }: { value: Muscle | null; onChange: (m: Muscle | null) => void }) {
   return (
-    <div className="chips">
-      <button className={`chip${value == null ? ' on' : ''}`} onClick={() => onChange(null)}>Todos</button>
+    <div className="chips" role="group" aria-label="Filtrar por músculo">
+      <button className={`chip${value == null ? ' on' : ''}`} onClick={() => onChange(null)} aria-pressed={value == null}>Todos</button>
       {(Object.keys(MUSCLE_LABEL) as Muscle[]).map((m) => (
-        <button key={m} className={`chip${value === m ? ' on' : ''}`} onClick={() => onChange(value === m ? null : m)}>
+        <button key={m} className={`chip${value === m ? ' on' : ''}`} onClick={() => onChange(value === m ? null : m)} aria-pressed={value === m}>
           {MUSCLE_LABEL[m]}
         </button>
       ))}
@@ -42,29 +47,31 @@ export function ExercisePicker({ onClose, onPick }: { onClose: () => void; onPic
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
 
   return (
-    <Sheet
-      title="Añadir ejercicio"
-      onClose={onClose}
-      actions={
-        <button className="btn primary small" disabled={!sel.length} onClick={() => onPick(sel)}>
-          Añadir{sel.length ? ` (${sel.length})` : ''}
-        </button>
-      }
-    >
-      <input className="input" placeholder="Buscar ejercicio…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+    <Sheet title="Añadir ejercicios" onClose={onClose}>
+      <input className="field search" type="search" placeholder="Buscar: press, remo, polea…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
       <MuscleChips value={muscle} onChange={setMuscle} />
-      <button className="btn ghost small" style={{ alignSelf: 'flex-start' }} onClick={() => setCreating(true)}>+ Crear ejercicio personalizado</button>
-      <div>
-        {filtered.map((e) => (
-          <div key={e.id} className={`list-item${sel.includes(e.id) ? ' sel' : ''}`} onClick={() => toggle(e.id)}>
-            <div className="avatar">{sel.includes(e.id) ? sel.indexOf(e.id) + 1 : initials(e.name)}</div>
-            <div className="grow">
-              <div>{e.name}</div>
-              <small>{MUSCLE_LABEL[e.primary]} · {EQUIPMENT_LABEL[e.equipment]}</small>
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && <p className="empty">Sin resultados.</p>}
+      <div className="list">
+        {filtered.map((e) => {
+          const pos = sel.indexOf(e.id)
+          return (
+            <button key={e.id} className={`list-row${pos >= 0 ? ' selected' : ''}`} onClick={() => toggle(e.id)} aria-pressed={pos >= 0}>
+              <div className="grow">
+                <div style={{ fontWeight: 600 }}>{e.name}</div>
+                <div className="tiny muted">{exerciseMeta(e)}</div>
+              </div>
+              {pos >= 0 && <span className="num" style={{ color: 'var(--ember)', fontSize: '1.25rem' }} aria-hidden="true">{pos + 1}</span>}
+            </button>
+          )
+        })}
+        {filtered.length === 0 && (
+          <div className="list-row"><span className="muted">Ningún ejercicio coincide. Créalo abajo.</span></div>
+        )}
+      </div>
+      <button className="btn outline" onClick={() => setCreating(true)}><Icon name="plus" />Crear ejercicio{q.trim() ? ` «${q.trim()}»` : ''}</button>
+      <div style={{ position: 'sticky', bottom: 0, paddingTop: 8, background: 'var(--bg)' }}>
+        <button className="btn primary lg block-w" disabled={!sel.length} onClick={() => onPick(sel)}>
+          {sel.length ? `Añadir ${sel.length} ${sel.length === 1 ? 'ejercicio' : 'ejercicios'}` : 'Elige uno o varios'}
+        </button>
       </div>
       {creating && (
         <CustomExerciseForm
@@ -93,26 +100,27 @@ export function CustomExerciseForm({ initialName = '', onClose, onCreated }: { i
   }
 
   return (
-    <Sheet title="Nuevo ejercicio" onClose={onClose} auto actions={<button className="btn primary small" disabled={!name.trim()} onClick={save}>Guardar</button>}>
-      <label className="stack"><small>Nombre</small><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></label>
-      <label className="stack"><small>Músculo principal</small>
-        <select className="input" value={primary} onChange={(e) => setPrimary(e.target.value as Muscle)}>
+    <Sheet title="Nuevo ejercicio" onClose={onClose} fit>
+      <label className="stack small muted">Nombre<input className="field" value={name} onChange={(e) => setName(e.target.value)} style={{ color: 'var(--ink)' }} /></label>
+      <label className="stack small muted">Músculo principal
+        <select className="field" value={primary} onChange={(e) => setPrimary(e.target.value as Muscle)} style={{ color: 'var(--ink)' }}>
           {Object.entries(MUSCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </label>
-      <label className="stack"><small>Material</small>
-        <select className="input" value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)}>
+      <label className="stack small muted">Material
+        <select className="field" value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)} style={{ color: 'var(--ink)' }}>
           {Object.entries(EQUIPMENT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </label>
-      <label className="stack"><small>Tipo de registro</small>
-        <select className="input" value={type} onChange={(e) => setType(e.target.value as Exercise['type'])}>
+      <label className="stack small muted">Qué se apunta
+        <select className="field" value={type} onChange={(e) => setType(e.target.value as Exercise['type'])} style={{ color: 'var(--ink)' }}>
           <option value="weight_reps">Peso y repeticiones</option>
           <option value="bodyweight_reps">Solo repeticiones</option>
-          <option value="weighted_bodyweight">Peso corporal + lastre</option>
+          <option value="weighted_bodyweight">Peso corporal más lastre</option>
           <option value="duration">Tiempo</option>
         </select>
       </label>
+      <button className="btn primary lg" disabled={!name.trim()} onClick={save}>Crear ejercicio</button>
     </Sheet>
   )
 }

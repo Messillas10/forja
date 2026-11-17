@@ -2,7 +2,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ExercisePicker } from '../components/ExercisePicker'
-import { fmtKg, Sheet } from '../components/ui'
+import { Icon } from '../components/icons'
+import { Figure, fmtKg, Sheet } from '../components/ui'
+import { MUSCLE_LABEL } from '../data/exercises'
 import { addExercisesToWorkout, db, deleteWorkout, exerciseHistory, finishWorkout, getActiveWorkout } from '../db'
 import { RPE_VALUES, tonnage, warmupSets } from '../lib/formulas'
 import { incrementFor, suggestNext, type Suggestion } from '../lib/progression'
@@ -11,6 +13,7 @@ import type { Exercise, SetKind, Workout, WorkoutExerciseMeta, WorkoutSet } from
 
 const KIND_ORDER: SetKind[] = ['normal', 'warmup', 'drop', 'failure']
 const KIND_LABEL: Record<SetKind, string> = { normal: '', warmup: 'C', drop: 'D', failure: 'F' }
+const KIND_NAME: Record<SetKind, string> = { normal: 'normal', warmup: 'calentamiento', drop: 'drop set', failure: 'al fallo' }
 
 export default function ActiveWorkout() {
   const navigate = useNavigate()
@@ -26,36 +29,45 @@ export default function ActiveWorkout() {
   if (workout === null) {
     return (
       <div className="page">
-        <p className="empty">No hay ningún entrenamiento en curso.</p>
-        <button className="btn primary" onClick={() => navigate('/')}>Volver</button>
+        <div className="empty">
+          <h1 className="display title">Sin entreno en curso</h1>
+          <p>Empieza uno desde la pantalla de inicio.</p>
+          <button className="btn primary" onClick={() => navigate('/')}>Ir a inicio</button>
+        </div>
       </div>
     )
   }
 
-  const done = sets.filter((s) => s.done && s.kind !== 'warmup')
+  const work = sets.filter((s) => s.kind !== 'warmup')
+  const done = work.filter((s) => s.done)
 
   return (
     <>
-      <WorkoutHeader workout={workout} volume={tonnage(done)} setsDone={done.length} onFinish={() => setFinishing(true)} />
-      <div className="page" style={{ paddingTop: 12 }}>
+      <WorkoutHeader workout={workout} volume={tonnage(done)} setsDone={done.length} setsTotal={work.length} onFinish={() => setFinishing(true)} />
+      <div className="page flush-top" style={{ gap: 14, paddingTop: 14, paddingBottom: 'calc(110px + var(--safe-b))' }}>
         {metas.map((m) => {
           const ex = exercises.get(m.exerciseId)
           if (!ex) return null
           return <ExerciseBlock key={m.id} meta={m} ex={ex} sets={sets.filter((s) => s.exerciseOrder === m.exerciseOrder).sort((a, b) => a.setIndex - b.setIndex)} />
         })}
-        {metas.length === 0 && <p className="empty">Añade tu primer ejercicio para empezar.</p>}
-        <button className="btn primary block" onClick={() => setPicking(true)}>+ Añadir ejercicio</button>
+        {metas.length === 0 && (
+          <div className="empty" style={{ padding: '24px 4px' }}>
+            <h2 className="h2">Entreno vacío</h2>
+            <p>Añade el primer ejercicio. Las series se guardan al momento, aunque cierres la app.</p>
+          </div>
+        )}
+        <button className="btn ink lg block-w" onClick={() => setPicking(true)}><Icon name="plus" />Añadir ejercicio</button>
         <button
-          className="btn danger block"
+          className="btn danger block-w"
           onClick={async () => {
-            if (confirm('¿Descartar este entrenamiento? Se perderán las series.')) {
+            if (confirm('¿Descartar este entreno? Se borrarán todas sus series.')) {
               restTimer.stop()
               await deleteWorkout(workout.id!)
               navigate('/')
             }
           }}
         >
-          Descartar entrenamiento
+          Descartar entreno
         </button>
       </div>
       {picking && (
@@ -69,7 +81,9 @@ export default function ActiveWorkout() {
       )}
       {finishing && (
         <FinishSheet
+          workout={workout}
           setsDone={done.length}
+          volume={tonnage(done)}
           onClose={() => setFinishing(false)}
           onConfirm={async (rpe) => {
             restTimer.stop()
@@ -82,32 +96,37 @@ export default function ActiveWorkout() {
   )
 }
 
-function WorkoutHeader({ workout, volume, setsDone, onFinish }: { workout: Workout; volume: number; setsDone: number; onFinish: () => void }) {
+function useNow(ms = 1000) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
+    const id = setInterval(() => setNow(Date.now()), ms)
     return () => clearInterval(id)
-  }, [])
-  const elapsed = Math.floor((now - workout.startedAt) / 1000)
-  const h = Math.floor(elapsed / 3600)
+  }, [ms])
+  return now
+}
+
+const fmtElapsed = (sec: number) => {
+  const h = Math.floor(sec / 3600)
+  return h ? `${h}:${fmtClock(sec % 3600).padStart(5, '0')}` : fmtClock(sec)
+}
+
+function WorkoutHeader({ workout, volume, setsDone, setsTotal, onFinish }: { workout: Workout; volume: number; setsDone: number; setsTotal: number; onFinish: () => void }) {
+  const navigate = useNavigate()
+  const now = useNow()
+  const elapsed = Math.max(0, Math.floor((now - workout.startedAt) / 1000))
   return (
-    <div className="workout-head">
-      <div className="grow stack" style={{ gap: 2 }}>
-        <input
-          className="input"
-          style={{ background: 'transparent', padding: 0, minHeight: 0, fontWeight: 700, fontSize: '1.05rem' }}
-          value={workout.name}
-          onChange={(e) => db.workouts.update(workout.id!, { name: e.target.value })}
-          aria-label="Nombre del entrenamiento"
-        />
-        <div className="workout-stats muted">
-          <span><b>{h ? `${h}:` : ''}{fmtClock(elapsed % 3600)}</b>Duración</span>
-          <span><b>{fmtKg(volume)} kg</b>Volumen</span>
-          <span><b>{setsDone}</b>Series</span>
-        </div>
+    <header className="wk-head">
+      <div className="row">
+        <button className="icon-btn" style={{ marginLeft: -10 }} onClick={() => navigate('/')} aria-label="Salir sin terminar (el entreno sigue en curso)"><Icon name="back" /></button>
+        <input className="wk-name grow" value={workout.name} onChange={(e) => db.workouts.update(workout.id!, { name: e.target.value })} aria-label="Nombre del entreno" />
+        <button className="btn done sm" onClick={onFinish}>Terminar</button>
       </div>
-      <button className="btn ok" onClick={onFinish}>Terminar</button>
-    </div>
+      <div className="wk-stats">
+        <div><b>{fmtElapsed(elapsed)}</b><span>Tiempo</span></div>
+        <div><b>{fmtKg(volume)}</b><span>kg movidos</span></div>
+        <div><b>{setsDone}<span style={{ fontSize: '1rem', color: 'var(--steel)' }}>/{setsTotal}</span></b><span>Series</span></div>
+      </div>
+    </header>
   )
 }
 
@@ -119,6 +138,7 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
   const prev = history?.[0] ?? []
   const showWeight = ex.type === 'weight_reps' || ex.type === 'weighted_bodyweight'
   const isDuration = ex.type === 'duration'
+  const rowClass = isDuration ? 'duration' : showWeight ? '' : 'no-weight'
 
   async function addSet() {
     const last = sets[sets.length - 1]
@@ -142,7 +162,7 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
 
   async function addWarmup() {
     const work = sets.find((s) => s.kind === 'normal')?.weight ?? suggestion?.weight ?? prev[0]?.weight
-    if (!work) return alert('Indica primero el peso de trabajo.')
+    if (!work) return alert('Escribe primero el peso de la primera serie de trabajo.')
     const ws = warmupSets(work, incrementFor(ex))
     await db.transaction('rw', db.sets, async () => {
       for (const s of sets) await db.sets.update(s.id!, { setIndex: s.setIndex + ws.length })
@@ -150,112 +170,135 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
         ws.map((w, i) => ({ workoutId: meta.workoutId, exerciseId: ex.id, exerciseOrder: meta.exerciseOrder, setIndex: i, kind: 'warmup' as const, weight: w.weight, reps: w.reps, done: false })),
       )
     })
+    setConfig(false)
   }
 
   async function removeExercise() {
-    if (!confirm(`¿Quitar ${ex.name} del entrenamiento?`)) return
+    if (!confirm(`¿Quitar ${ex.name} de este entreno?`)) return
     await db.transaction('rw', db.sets, db.workoutExercises, async () => {
       await db.sets.where('[workoutId+exerciseOrder]').equals([meta.workoutId, meta.exerciseOrder]).delete()
       await db.workoutExercises.delete(meta.id!)
     })
   }
 
-  const labels = sets.reduce<string[]>((acc, s) => {
-    const n = acc.filter((_, i) => sets[i].kind === 'normal').length
+  const labels = sets.reduce<string[]>((acc, s, i) => {
+    const n = sets.slice(0, i).filter((x) => x.kind === 'normal').length
     return [...acc, KIND_LABEL[s.kind] || String(n + 1)]
   }, [])
+  const doneCount = sets.filter((s) => s.done).length
+
   return (
-    <div className="ex-card">
-      <div className="row between">
-        <span className="ex-title">{ex.name}</span>
-        <button className="btn ghost small" onClick={() => setConfig((c) => !c)} aria-label="Ajustes del ejercicio">⋯</button>
-      </div>
-      {config && (
-        <div className="stack" style={{ background: 'var(--surface-2)', padding: 10, borderRadius: 8 }}>
-          <div className="row wrap">
-            <label className="row">Reps <input className="cell" type="number" inputMode="numeric" value={meta.repMin ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { repMin: +e.target.value || undefined })} />–<input className="cell" type="number" inputMode="numeric" value={meta.repMax ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { repMax: +e.target.value || undefined })} /></label>
-            <label className="row">RPE obj.
-              <select className="cell rpe" value={meta.targetRpe ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { targetRpe: e.target.value ? +e.target.value : undefined })}>
-                <option value="">–</option>
-                {RPE_VALUES.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </label>
-            <label className="row">Descanso
-              <select className="cell" style={{ maxWidth: 80 }} value={meta.restSec} onChange={(e) => db.workoutExercises.update(meta.id!, { restSec: +e.target.value })}>
-                {[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map((s) => <option key={s} value={s}>{s ? fmtClock(s) : 'No'}</option>)}
-              </select>
-            </label>
+    <section className="exercise" aria-label={ex.name}>
+      <div className="exercise-head">
+        <div className="grow">
+          <div className="exercise-name">{ex.name}</div>
+          <div className="tiny muted">
+            {MUSCLE_LABEL[ex.primary]}, {target.repMin}–{target.repMax} reps{target.targetRpe ? ` a RPE ${String(target.targetRpe).replace('.', ',')}` : ''}, descanso {fmtClock(meta.restSec)}
           </div>
-          <div className="row wrap">
-            {showWeight && <button className="btn small" onClick={addWarmup}>+ Series de calentamiento</button>}
-            <button className="btn small danger" onClick={removeExercise}>Quitar ejercicio</button>
+        </div>
+        <span className="tiny muted num" style={{ fontSize: '0.95rem', paddingTop: 2 }}>{doneCount}/{sets.length}</span>
+        <button className="icon-btn" style={{ marginTop: -8, marginRight: -6 }} onClick={() => setConfig((c) => !c)} aria-label="Ajustes del ejercicio" aria-expanded={config}><Icon name="more" /></button>
+      </div>
+
+      {config && (
+        <div className="settings fade-in">
+          <label>Rango de reps
+            <span className="range">
+              <input className="cell" type="number" inputMode="numeric" value={meta.repMin ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { repMin: +e.target.value || undefined })} aria-label="Reps mínimas" />
+              –
+              <input className="cell" type="number" inputMode="numeric" value={meta.repMax ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { repMax: +e.target.value || undefined })} aria-label="Reps máximas" />
+            </span>
+          </label>
+          <label>RPE objetivo
+            <select className="cell" value={meta.targetRpe ?? ''} onChange={(e) => db.workoutExercises.update(meta.id!, { targetRpe: e.target.value ? +e.target.value : undefined })}>
+              <option value="">Sin RPE</option>
+              {RPE_VALUES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+          <label>Descanso
+            <select className="cell" value={meta.restSec} onChange={(e) => db.workoutExercises.update(meta.id!, { restSec: +e.target.value })}>
+              {[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map((s) => <option key={s} value={s}>{s ? fmtClock(s) : 'Sin descanso'}</option>)}
+            </select>
+          </label>
+          <div className="actions">
+            {showWeight && <button className="btn sm outline" onClick={addWarmup}>Añadir calentamiento</button>}
+            <button className="btn sm danger" onClick={removeExercise}>Quitar ejercicio</button>
           </div>
         </div>
       )}
-      {suggestion && <SuggestionLine s={suggestion} showWeight={showWeight} />}
-      <table className="sets">
-        <thead>
-          <tr>
-            <th>Serie</th>
-            <th>Anterior</th>
-            {showWeight && <th>{ex.type === 'weighted_bodyweight' ? '+kg' : 'kg'}</th>}
-            <th>{isDuration ? 'seg' : 'Reps'}</th>
-            {!isDuration && <th>RPE</th>}
-            <th>✓</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sets.map((s, i) => {
-            const p = prev[s.setIndex]
-            const sug = s.kind === 'normal' ? suggestion : null
-            return (
-              <SetRow
-                key={s.id}
-                s={s}
-                label={labels[i]}
-                prev={p}
-                placeholder={{ weight: sug?.weight || p?.weight, reps: sug?.reps || p?.reps, durationSec: p?.durationSec }}
-                showWeight={showWeight}
-                isDuration={isDuration}
-                restSec={s.kind === 'warmup' ? Math.min(60, meta.restSec) : meta.restSec}
-              />
-            )
-          })}
-        </tbody>
-      </table>
+
+      {suggestion && <Target s={suggestion} showWeight={showWeight} />}
+
+      <div className="sets" role="table" aria-label={`Series de ${ex.name}`}>
+        <div className={`set-row head ${rowClass}`} role="row">
+          <span>Serie</span>
+          <span>Anterior</span>
+          {showWeight && <span>{ex.type === 'weighted_bodyweight' ? '+kg' : 'kg'}</span>}
+          <span>{isDuration ? 'Segundos' : 'Reps'}</span>
+          {!isDuration && <span>RPE</span>}
+          <span />
+        </div>
+        {sets.map((s, i) => {
+          const p = prev[s.setIndex]
+          const sug = s.kind === 'normal' ? suggestion : null
+          return (
+            <SetRow
+              key={s.id}
+              s={s}
+              label={labels[i]}
+              prev={p}
+              placeholder={{ weight: sug?.weight || p?.weight, reps: sug?.reps || p?.reps, durationSec: p?.durationSec }}
+              showWeight={showWeight}
+              isDuration={isDuration}
+              rowClass={rowClass}
+              restSec={s.kind === 'warmup' ? Math.min(60, meta.restSec) : meta.restSec}
+            />
+          )
+        })}
+      </div>
       <div className="row">
-        <button className="btn grow" onClick={addSet}>+ Añadir serie</button>
-        {sets.length > 0 && <button className="btn" onClick={removeLastSet} aria-label="Quitar serie">−</button>}
+        <button className="btn grow" onClick={addSet}><Icon name="plus" />Añadir serie</button>
+        {sets.length > 0 && <button className="btn" style={{ width: 52, padding: 0 }} onClick={removeLastSet} aria-label="Quitar la última serie"><Icon name="minus" /></button>}
       </div>
-    </div>
+    </section>
   )
 }
 
-function SuggestionLine({ s, showWeight }: { s: Suggestion; showWeight: boolean }) {
-  const cls = { subir: 'up', mantener: 'hold', bajar: 'down', descarga: 'deload', nuevo: 'hold' }[s.action]
+const ACTION_TEXT: Record<Suggestion['action'], string> = { subir: 'Sube', mantener: 'Mantén', bajar: 'Baja', descarga: 'Descarga', nuevo: 'Nuevo' }
+const ACTION_CLASS: Record<Suggestion['action'], string> = { subir: 'up', mantener: '', bajar: 'down', descarga: 'deload', nuevo: '' }
+
+function Target({ s, showWeight }: { s: Suggestion; showWeight: boolean }) {
   return (
-    <div className="suggest">
-      <span className={`badge ${cls}`}>{s.action}</span>
-      <div className="grow">
-        <b>{showWeight && s.weight ? `${fmtKg(s.weight)} kg × ` : ''}{s.reps} reps{s.rpe ? ` @RPE ${s.rpe}` : ''}</b>
-        <div className="muted" style={{ fontSize: '0.8rem' }}>{s.reason}</div>
+    <div className="target">
+      <div className="target-figure">
+        {showWeight && s.weight ? <>{fmtKg(s.weight)}<small>kg</small> × </> : null}
+        {s.reps}<small>reps</small>
+      </div>
+      <div className="grow stack" style={{ gap: 3 }}>
+        <span className={`tag ${ACTION_CLASS[s.action]}`} style={{ alignSelf: 'flex-start' }}>
+          {s.action === 'subir' && <Icon name="up" className="tag-icon" />}
+          {ACTION_TEXT[s.action]}
+        </span>
+        <p>{s.reason}</p>
       </div>
     </div>
   )
 }
 
-function SetRow({ s, label, prev, placeholder, showWeight, isDuration, restSec }: {
+function SetRow({ s, label, prev, placeholder, showWeight, isDuration, rowClass, restSec }: {
   s: WorkoutSet
   label: string
   prev?: WorkoutSet
   placeholder: { weight?: number; reps?: number; durationSec?: number }
   showWeight: boolean
   isDuration: boolean
+  rowClass: string
   restSec: number
 }) {
   const update = (patch: Partial<WorkoutSet>) => db.sets.update(s.id!, patch)
   const num = (v: string) => (v === '' ? undefined : Number(v.replace(',', '.')))
   const select = (e: React.FocusEvent<HTMLInputElement>) => e.target.select()
+  const shown = (v?: number) => (v == null ? '' : String(v).replace('.', ','))
 
   async function toggleDone() {
     if (s.done) return update({ done: false, completedAt: undefined })
@@ -269,69 +312,80 @@ function SetRow({ s, label, prev, placeholder, showWeight, isDuration, restSec }
       if (patch.reps == null && s.reps == null) return navigator.vibrate?.(80)
     }
     await update(patch)
+    navigator.vibrate?.(15)
     restTimer.start(restSec)
   }
 
   const prevText = prev
     ? isDuration
       ? `${prev.durationSec ?? 0} s`
-      : `${showWeight ? `${fmtKg(prev.weight ?? 0)}×` : ''}${prev.reps ?? 0}${prev.rpe ? ` @${prev.rpe}` : ''}`
-    : '—'
+      : `${showWeight ? `${fmtKg(prev.weight ?? 0)}×` : ''}${prev.reps ?? 0}`
+    : '–'
+  const prevLabel = prev ? `${prevText}${prev.rpe ? ` a RPE ${String(prev.rpe).replace('.', ',')}` : ''}` : ''
 
   return (
-    <tr className={s.done ? 'done' : ''}>
-      <td>
-        <button className={`set-num ${s.kind}`} onClick={() => update({ kind: KIND_ORDER[(KIND_ORDER.indexOf(s.kind) + 1) % KIND_ORDER.length] })} title="Tipo: normal / calentamiento / drop / fallo">
-          {label}
-        </button>
-      </td>
-      <td>
-        <button className="prev" disabled={!prev} onClick={() => prev && update({ weight: prev.weight, reps: prev.reps, durationSec: prev.durationSec })}>{prevText}</button>
-      </td>
+    <div className={`set-row ${rowClass}${s.done ? ' done' : ''}`} role="row">
+      <button
+        className={`set-kind ${s.kind}`}
+        onClick={() => update({ kind: KIND_ORDER[(KIND_ORDER.indexOf(s.kind) + 1) % KIND_ORDER.length] })}
+        aria-label={`Serie ${label}, ${KIND_NAME[s.kind]}. Toca para cambiar el tipo`}
+      >
+        {label}
+      </button>
+      <button className="prev" disabled={!prev} onClick={() => prev && update({ weight: prev.weight, reps: prev.reps, durationSec: prev.durationSec })} aria-label={prev ? `Copiar la serie anterior: ${prevLabel}` : 'Sin serie anterior'} title={prevLabel}>
+        {prevText}
+      </button>
       {showWeight && (
-        <td><input className="cell" type="text" inputMode="decimal" value={s.weight ?? ''} placeholder={placeholder.weight != null ? fmtKg(placeholder.weight) : ''} onFocus={select} onChange={(e) => update({ weight: num(e.target.value) })} aria-label="Peso" /></td>
+        <input className="cell" type="text" inputMode="decimal" value={shown(s.weight)} placeholder={placeholder.weight != null ? fmtKg(placeholder.weight) : ''} onFocus={select} onChange={(e) => update({ weight: num(e.target.value) })} aria-label="Peso en kg" />
       )}
-      <td>
-        {isDuration ? (
-          <input className="cell" type="text" inputMode="numeric" value={s.durationSec ?? ''} placeholder={placeholder.durationSec?.toString() ?? ''} onFocus={select} onChange={(e) => update({ durationSec: num(e.target.value) })} aria-label="Segundos" />
-        ) : (
-          <input className="cell" type="text" inputMode="numeric" value={s.reps ?? ''} placeholder={placeholder.reps?.toString() ?? ''} onFocus={select} onChange={(e) => update({ reps: num(e.target.value) })} aria-label="Repeticiones" />
-        )}
-      </td>
+      {isDuration ? (
+        <input className="cell" type="text" inputMode="numeric" value={shown(s.durationSec)} placeholder={placeholder.durationSec?.toString() ?? ''} onFocus={select} onChange={(e) => update({ durationSec: num(e.target.value) })} aria-label="Segundos" />
+      ) : (
+        <input className="cell" type="text" inputMode="numeric" value={shown(s.reps)} placeholder={placeholder.reps?.toString() ?? ''} onFocus={select} onChange={(e) => update({ reps: num(e.target.value) })} aria-label="Repeticiones" />
+      )}
       {!isDuration && (
-        <td>
-          <select className="cell rpe" value={s.rpe ?? ''} onChange={(e) => update({ rpe: e.target.value ? Number(e.target.value) : undefined })} aria-label="RPE">
-            <option value="">–</option>
-            {RPE_VALUES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </td>
+        <select className="cell" value={s.rpe ?? ''} onChange={(e) => update({ rpe: e.target.value ? Number(e.target.value) : undefined })} aria-label="RPE">
+          <option value="">–</option>
+          {RPE_VALUES.map((r) => <option key={r} value={r}>{String(r).replace('.', ',')}</option>)}
+        </select>
       )}
-      <td><button className="check" onClick={toggleDone} aria-label="Completar serie">✓</button></td>
-    </tr>
+      <button className="check" onClick={toggleDone} aria-label={s.done ? 'Desmarcar serie' : 'Marcar serie como hecha'} aria-pressed={s.done}>
+        <Icon name="check" />
+      </button>
+    </div>
   )
 }
 
-const SESSION_RPE = [
+const SESSION_RPE: [number, string][] = [
   [1, 'Muy, muy fácil'], [2, 'Fácil'], [3, 'Moderado'], [4, 'Algo duro'], [5, 'Duro'],
-  [6, 'Duro+'], [7, 'Muy duro'], [8, 'Muy duro+'], [9, 'Casi máximo'], [10, 'Máximo'],
-] as const
+  [6, 'Duro'], [7, 'Muy duro'], [8, 'Muy duro'], [9, 'Casi al máximo'], [10, 'Máximo'],
+]
 
-function FinishSheet({ setsDone, onClose, onConfirm }: { setsDone: number; onClose: () => void; onConfirm: (rpe?: number) => void }) {
+function FinishSheet({ workout, setsDone, volume, onClose, onConfirm }: { workout: Workout; setsDone: number; volume: number; onClose: () => void; onConfirm: (rpe?: number) => void }) {
   const [rpe, setRpe] = useState<number | undefined>()
+  const now = useNow(10000)
+  const minutes = Math.round((now - workout.startedAt) / 60000)
   return (
-    <Sheet title="Terminar entrenamiento" onClose={onClose} auto>
-      {setsDone === 0 && <p className="muted">No has completado ninguna serie. Las series sin marcar se descartan.</p>}
-      <div className="stack">
-        <b>¿Cómo de duro ha sido? (RPE de sesión)</b>
-        <small>Escala CR-10 de Foster (2001). Sirve para calcular tu carga semanal y el ratio agudo:crónico.</small>
-        <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-          {SESSION_RPE.map(([v, l]) => (
-            <button key={v} className={`chip${rpe === v ? ' on' : ''}`} style={{ borderRadius: 10, padding: '8px 2px' }} onClick={() => setRpe(v)} title={l}>{v}</button>
+    <Sheet title="Terminar entreno" onClose={onClose} fit>
+      <div className="figures">
+        <Figure value={`${minutes}′`} label="Duración" />
+        <Figure value={fmtKg(volume)} label="kg movidos" />
+        <Figure value={setsDone} label="Series hechas" />
+      </div>
+      {setsDone === 0 && <p className="small" style={{ color: 'var(--warn)' }}>No has marcado ninguna serie. Las series sin marcar no se guardan.</p>}
+      <div className="stack" style={{ gap: 10 }}>
+        <h3 className="h2">¿Cómo de duro ha sido?</h3>
+        <p className="small muted">Del 1 al 10. Sirve para seguir tu carga semanal y detectar si acumulas fatiga.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+          {SESSION_RPE.map(([v]) => (
+            <button key={v} className={`chip num${rpe === v ? ' on' : ''}`} style={{ borderRadius: 'var(--r-md)', minHeight: 48, fontSize: '1.25rem' }} onClick={() => setRpe(rpe === v ? undefined : v)} aria-pressed={rpe === v}>
+              {v}
+            </button>
           ))}
         </div>
-        {rpe && <small>{SESSION_RPE[rpe - 1][1]}</small>}
+        <p className="small" style={{ minHeight: '1.4em' }}>{rpe ? SESSION_RPE[rpe - 1][1] : <span className="muted">Opcional</span>}</p>
       </div>
-      <button className="btn ok block" onClick={() => onConfirm(rpe)}>Guardar entrenamiento</button>
+      <button className="btn done lg block-w" onClick={() => onConfirm(rpe)}>Guardar entreno</button>
     </Sheet>
   )
 }

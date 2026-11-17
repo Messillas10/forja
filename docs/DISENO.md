@@ -107,3 +107,29 @@ Los rangos de las plantillas de rutina son fuerza 3–5 @8, hipertrofia 8–12 @
 1. En la app, **Entrenador → Compartir resumen**. Se genera un texto con las sesiones, los e1RM, las series por músculo, el peso corporal, las rutinas (con los IDs de cada ejercicio) y los comentarios del atleta.
 2. En el ordenador, la skill `/entrenador` de Claude Code lo analiza junto con el perfil y los informes anteriores, que están en un espacio privado fuera de este repositorio.
 3. Si hay cambios, genera un enlace `#/importar/<código>`: es JSON comprimido con deflate-raw y codificado en base64url (ver `src/lib/routineShare.ts`). Al ir en el fragmento `#`, los datos no pasan por ningún servidor. Al abrirlo, la app muestra las rutinas y se importan con un toque.
+
+## 9. Diseño visual: «hierro y tiza»
+
+Inspirado en el gimnasio: tiza de magnesio, discos de hierro y números estampados.
+
+- **Color** (tokens en `src/index.css`):
+  - Tema claro, «tiza»: fondo `#ECEDEA` y texto hierro `#1D2125`.
+  - Tema oscuro, «grafito»: fondo `#202326`.
+  - Un único acento, **ascua** (`#C8450C`, o `#F26B2A` en oscuro), solo para «actúa ahora»: empezar y descanso.
+  - Verde (`#2F7D4F`) para la serie hecha.
+  - Los colores de disco IWF solo aparecen en la calculadora de discos.
+- **Tipografía:** Archivo variable, incluida en la app para que funcione sin conexión, con dos papeles:
+  - títulos anchos (125 %) y gruesos, como estampados;
+  - **números** estrechos (72–75 %) y pesados, con cifras tabulares, para que quepan en las columnas y se lean entre series.
+- **Elemento memorable:** el objetivo de cada ejercicio en cifras grandes («82,5 kg × 8 reps»). Lo demás es sobrio.
+- **Estructura:**
+  - listas como filas con separadores;
+  - superficies solo donde agrupan (cada ejercicio del entreno);
+  - sin mayúsculas en etiquetas;
+  - acciones principales al alcance del pulgar.
+- **Accesibilidad:**
+  - foco visible;
+  - respeta `prefers-reduced-motion`;
+  - áreas táctiles de 44 px o más;
+  - etiquetas `aria` en las filas de series;
+  - tema automático, claro u oscuro (Herramientas → Apariencia).

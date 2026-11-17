@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Icon, type IconName } from './components/icons'
 import { RestBar } from './components/ui'
 import { syncSeedExercises } from './db'
 import ActiveWorkout from './pages/ActiveWorkout'
@@ -11,42 +12,24 @@ import Progress from './pages/Progress'
 import RoutineEditor from './pages/RoutineEditor'
 import Tools from './pages/Tools'
 
-const icon = (d: string) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
-)
-
-const TABS = [
-  { to: '/', label: 'Entrenar', d: 'M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11' },
-  { to: '/historial', label: 'Historial', d: 'M12 8v4l3 2M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5' },
-  { to: '/ejercicios', label: 'Ejercicios', d: 'M4 6h16M4 12h16M4 18h10' },
-  { to: '/progreso', label: 'Progreso', d: 'M3 20h18M6 16l4-5 4 3 5-7' },
-  { to: '/herramientas', label: 'Herram.', d: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.8-.6-.6-2.8z' },
+const TABS: { to: string; label: string; icon: IconName }[] = [
+  { to: '/', label: 'Entrenar', icon: 'train' },
+  { to: '/historial', label: 'Historial', icon: 'history' },
+  { to: '/ejercicios', label: 'Ejercicios', icon: 'exercises' },
+  { to: '/progreso', label: 'Progreso', icon: 'progress' },
+  { to: '/herramientas', label: 'Herramientas', icon: 'tools' },
 ]
 
-function TabBar() {
-  const { pathname } = useLocation()
-  if (pathname === '/entreno') return null
-  return (
-    <div className="tabbar">
-      <nav>
-        {TABS.map((t) => (
-          <NavLink key={t.to} to={t.to} end={t.to === '/'}>
-            {icon(t.d)}
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
-    </div>
-  )
-}
+const NO_TABS = ['/entreno', '/importar']
 
-export default function App() {
+function Shell() {
+  const { pathname } = useLocation()
+  const tabs = !NO_TABS.some((p) => pathname.startsWith(p))
   useEffect(() => {
-    syncSeedExercises()
-    navigator.storage?.persist?.() // pide al navegador que no borre los datos
-  }, [])
+    window.scrollTo(0, 0)
+  }, [pathname])
   return (
-    <HashRouter>
+    <div className={tabs ? 'with-tabs' : undefined}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/entreno" element={<ActiveWorkout />} />
@@ -60,8 +43,31 @@ export default function App() {
         <Route path="/entrenador" element={<Coach />} />
         <Route path="/importar/:code" element={<ImportRoutines />} />
       </Routes>
-      <TabBar />
+      {tabs && (
+        <div className="tabbar">
+          <nav aria-label="Secciones">
+            {TABS.map((t) => (
+              <NavLink key={t.to} to={t.to} end={t.to === '/'}>
+                <Icon name={t.icon} />
+                {t.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      )}
       <RestBar />
+    </div>
+  )
+}
+
+export default function App() {
+  useEffect(() => {
+    syncSeedExercises()
+    navigator.storage?.persist?.() // pide al navegador que no borre los datos
+  }, [])
+  return (
+    <HashRouter>
+      <Shell />
     </HashRouter>
   )
 }

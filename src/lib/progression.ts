@@ -16,6 +16,9 @@ export interface Suggestion {
   reason: string
 }
 
+/** Número en formato español con un decimal como máximo. */
+const es = (n: number) => n.toLocaleString('es', { maximumFractionDigits: 1 })
+
 export function incrementFor(ex: Exercise): number {
   if (ex.increment) return ex.increment
   switch (ex.equipment) {
@@ -103,7 +106,7 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
       rpe: target.targetRpe,
       method: 'rpe',
       action: w > prev ? 'subir' : w < prev ? 'bajar' : 'mantener',
-      reason: `e1RM ${best.toFixed(1)} kg → ${targetReps} reps @RPE ${target.targetRpe}.`,
+      reason: `Máximo estimado ${es(best)} kg: ${targetReps} reps a RPE ${es(target.targetRpe)}.`,
     }
   }
 
@@ -120,7 +123,7 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
       reps: target.repMin,
       method: 'doble',
       action: 'subir',
-      reason: `Todas las series a ${target.repMax} reps: +${step.toLocaleString('es')} kg y vuelve a ${target.repMin} reps.`,
+      reason: `Todas las series a ${target.repMax} reps: +${es(step)} kg y vuelve a ${target.repMin} reps.`,
     }
   }
   if (allAtMax && tooHard) {
@@ -130,7 +133,7 @@ export function suggestNext(ex: Exercise, history: WorkoutSet[][], target: Targe
       rpe: target.targetRpe,
       method: 'doble',
       action: 'mantener',
-      reason: `Llegaste a ${target.repMax} reps pero más cerca del fallo que el RPE ${target.targetRpe} objetivo: repite el peso y consolida.`,
+      reason: `Llegaste a ${target.repMax} reps pero más cerca del fallo que el RPE ${es(target.targetRpe!)} objetivo: repite el peso y consolida.`,
     }
   }
   if (anyBelowMin) {

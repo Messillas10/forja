@@ -1,11 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { fmtKg } from '../components/ui'
+import { Icon } from '../components/icons'
+import { cap, Figure, fmtKg, TopBar } from '../components/ui'
 import { db, deleteWorkout } from '../db'
 import { e1rm, tonnage } from '../lib/formulas'
 import type { Exercise, WorkoutSet } from '../types'
 
-const fmtDate = (t: number) => new Date(t).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 const fmtDur = (ms: number) => {
   const m = Math.round(ms / 60000)
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`
@@ -30,28 +30,48 @@ export function HistoryList() {
     })
   })
   if (!data) return null
+
+  // Agrupar por mes para orientarse en el historial.
+  const months = new Map<string, typeof data>()
+  for (const item of data) {
+    const key = cap(new Date(item.w.startedAt).toLocaleDateString('es', { month: 'long', year: 'numeric' }))
+    months.set(key, [...(months.get(key) ?? []), item])
+  }
+
   return (
     <div className="page">
-      <h1>Historial</h1>
-      {data.length === 0 && <p className="empty">Aún no has terminado ningún entrenamiento.</p>}
-      {data.map(({ w, sets, groups, exercises }) => (
-        <Link key={w.id} to={`/historial/${w.id}`} className="card link">
-          <div className="row between">
-            <b>{w.name}</b>
-            <small>{fmtDate(w.startedAt)}</small>
+      <h1 className="display title">Historial</h1>
+      {data.length === 0 && (
+        <div className="empty">
+          <p>Aquí aparecerá cada entreno que termines, con sus series y récords.</p>
+          <Link to="/" className="btn primary">Empezar a entrenar</Link>
+        </div>
+      )}
+      {[...months].map(([month, items]) => (
+        <section key={month} className="section">
+          <h2 className="h2">{month}</h2>
+          <div className="list">
+            {items.map(({ w, sets, groups, exercises }) => {
+              const date = new Date(w.startedAt)
+              return (
+                <Link key={w.id} to={`/historial/${w.id}`} className="list-row" style={{ alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }}>
+                  <div style={{ width: 52, textAlign: 'center', flexShrink: 0 }}>
+                    <div className="num" style={{ fontSize: '1.75rem', lineHeight: 1 }}>{date.getDate()}</div>
+                    <div className="muted" style={{ fontSize: '0.75rem' }}>{date.toLocaleDateString('es', { weekday: 'long' })}</div>
+                  </div>
+                  <div className="grow stack" style={{ gap: 4 }}>
+                    <div style={{ fontWeight: 650 }}>{w.name}</div>
+                    <div className="tiny muted">{fmtDur(w.endedAt! - w.startedAt)}, {fmtKg(tonnage(sets))} kg, {sets.length} series</div>
+                    <div className="tiny ellipsis" style={{ color: 'var(--steel)' }}>
+                      {groups.map((g) => exercises.get(g[0].exerciseId)?.name).join(', ')}
+                    </div>
+                  </div>
+                  <Icon name="chev" className="chev" />
+                </Link>
+              )
+            })}
           </div>
-          <div className="row muted" style={{ gap: 16, fontSize: '0.85rem' }}>
-            <span>⏱ {fmtDur(w.endedAt! - w.startedAt)}</span>
-            <span>{fmtKg(tonnage(sets))} kg</span>
-            <span>{sets.length} series</span>
-          </div>
-          <div style={{ fontSize: '0.9rem' }}>
-            {groups.slice(0, 5).map((g) => (
-              <div key={g[0].exerciseOrder} className="muted">{g.length} × {exercises.get(g[0].exerciseId)?.name}</div>
-            ))}
-            {groups.length > 5 && <div className="muted">y {groups.length - 5} más…</div>}
-          </div>
-        </Link>
+        </section>
       ))}
     </div>
   )
@@ -65,8 +85,8 @@ export function WorkoutDetail() {
     if (!w) return null
     const sets = await db.sets.where('workoutId').equals(w.id!).toArray()
     const exercises = new Map((await db.exercises.toArray()).map((e) => [e.id, e]))
-    // Récords: mejor e1RM de este entreno frente al mejor de todos los entrenos anteriores.
-    const prs = new Map<string, number>()
+    // Récords: mejor e1RM de este entreno frente al mejor de todos los anteriores.
+    const prs = new Map<string, { now: number; before: number }>()
     for (const exId of new Set(sets.map((s) => s.exerciseId))) {
       const all = await db.sets.where('exerciseId').equals(exId).toArray()
       const earlier = await db.workouts.bulkGet([...new Set(all.map((s) => s.workoutId))])
@@ -74,70 +94,78 @@ export function WorkoutDetail() {
       const best = (list: WorkoutSet[]) => Math.max(0, ...list.filter((s) => s.done && s.kind !== 'warmup').map((s) => e1rm(s.weight ?? 0, s.reps ?? 0, s.rpe)))
       const before = best(all.filter((s) => earlierIds.has(s.workoutId)))
       const now = best(sets.filter((s) => s.exerciseId === exId))
-      if (now > before && before > 0) prs.set(exId, now)
+      if (now > before && before > 0) prs.set(exId, { now, before })
     }
     return { w, sets, exercises, prs }
   }, [id])
 
   if (data === undefined) return null
-  if (data === null) return <div className="page"><p className="empty">Entrenamiento no encontrado.</p></div>
+  if (data === null) return <div className="page"><TopBar back="/historial" /><p className="muted">Este entreno ya no existe.</p></div>
   const { w, sets, exercises, prs } = data
   const work = sets.filter((s) => s.kind !== 'warmup')
   const minutes = w.endedAt ? (w.endedAt - w.startedAt) / 60000 : 0
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <button className="btn ghost small" onClick={() => navigate('/historial')}>← Historial</button>
-      </div>
+    <div className="page" style={{ paddingTop: 8 }}>
       <div>
-        <h1>{w.name}</h1>
-        <small>{fmtDate(w.startedAt)}</small>
+        <TopBar back="/historial" />
+        <p className="small muted">{cap(new Date(w.startedAt).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
+        <h1 className="display title">{w.name}</h1>
       </div>
-      <div className="stat-grid">
-        <div className="stat"><b>{fmtDur(minutes * 60000)}</b><small>Duración</small></div>
-        <div className="stat"><b>{fmtKg(tonnage(work))}</b><small>Volumen (kg)</small></div>
-        <div className="stat"><b>{work.length}</b><small>Series</small></div>
-        {w.sessionRpe && <div className="stat"><b>{Math.round(w.sessionRpe * minutes)}</b><small>Carga sRPE (UA)</small></div>}
+      <div className="figures">
+        <Figure value={`${Math.round(minutes)}′`} label="Duración" />
+        <Figure value={fmtKg(tonnage(work))} label="kg movidos" />
+        <Figure value={work.length} label="Series" />
+        {w.sessionRpe ? <Figure value={w.sessionRpe} label="Esfuerzo (1–10)" /> : null}
       </div>
       {prs.size > 0 && (
-        <div className="card" style={{ border: '1px solid var(--ok)' }}>
-          <b>🏆 Nuevos récords (e1RM)</b>
-          {[...prs].map(([exId, v]) => <div key={exId}>{exercises.get(exId)?.name}: <b>{fmtKg(v)} kg</b></div>)}
+        <div className="callout">
+          <div className="row" style={{ fontWeight: 700, color: 'var(--done)' }}><Icon name="trophy" />{prs.size === 1 ? 'Nuevo récord' : `${prs.size} récords nuevos`}</div>
+          {[...prs].map(([exId, v]) => (
+            <div key={exId} className="row between small">
+              <span>{exercises.get(exId)?.name}</span>
+              <span className="num" style={{ fontSize: '1.05rem' }}>{fmtKg(v.before)} → {fmtKg(v.now)} kg</span>
+            </div>
+          ))}
+          <p className="tiny muted">Máximo estimado a una repetición (e1RM).</p>
         </div>
       )}
       {groupByExercise(sets).map((g) => {
         const ex = exercises.get(g[0].exerciseId) as Exercise | undefined
+        const hasW = ex?.type === 'weight_reps' || ex?.type === 'weighted_bodyweight'
         let n = 0
         return (
-          <div key={g[0].exerciseOrder} className="card">
-            <Link to={`/ejercicios/${g[0].exerciseId}`} className="ex-title">{ex?.name}</Link>
-            <table className="plain">
-              <thead><tr><th>Serie</th><th>Carga</th><th>RPE</th><th>e1RM</th></tr></thead>
+          <section key={g[0].exerciseOrder} className="section">
+            <Link to={`/ejercicios/${g[0].exerciseId}`} className="row between">
+              <h2 className="h2">{ex?.name ?? 'Ejercicio borrado'}</h2>
+              <Icon name="chev" className="chev" />
+            </Link>
+            <table className="data">
+              <thead><tr><th>Serie</th><th>{hasW ? 'kg × reps' : 'Reps'}</th><th>RPE</th>{hasW && <th>e1RM</th>}</tr></thead>
               <tbody>
                 {g.map((s) => (
                   <tr key={s.id}>
-                    <td>{s.kind === 'warmup' ? 'C' : s.kind === 'drop' ? 'D' : s.kind === 'failure' ? 'F' : ++n}</td>
-                    <td>{s.durationSec ? `${s.durationSec} s` : `${s.weight ? `${fmtKg(s.weight)} kg × ` : ''}${s.reps ?? 0}`}</td>
-                    <td>{s.rpe ?? '–'}</td>
-                    <td>{s.weight && s.reps && s.kind !== 'warmup' ? fmtKg(e1rm(s.weight, s.reps, s.rpe)) : '–'}</td>
+                    <td className={s.kind === 'warmup' ? 'muted' : undefined}>{s.kind === 'warmup' ? 'Calent.' : s.kind === 'drop' ? 'Drop' : s.kind === 'failure' ? 'Fallo' : ++n}</td>
+                    <td className="strong">{s.durationSec ? `${s.durationSec} s` : `${hasW ? `${fmtKg(s.weight ?? 0)} × ` : ''}${s.reps ?? 0}`}</td>
+                    <td>{s.rpe ? String(s.rpe).replace('.', ',') : '–'}</td>
+                    {hasW && <td>{s.weight && s.reps && s.kind !== 'warmup' ? fmtKg(e1rm(s.weight, s.reps, s.rpe)) : '–'}</td>}
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         )
       })}
       <button
-        className="btn danger block"
+        className="btn danger"
         onClick={async () => {
-          if (confirm('¿Borrar este entrenamiento del historial?')) {
+          if (confirm('¿Borrar este entreno del historial? No se puede deshacer.')) {
             await deleteWorkout(w.id!)
             navigate('/historial')
           }
         }}
       >
-        Borrar entrenamiento
+        Borrar entreno
       </button>
     </div>
   )
