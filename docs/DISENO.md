@@ -92,7 +92,9 @@ Los rangos de las plantillas de rutina son fuerza 3–5 @8, hipertrofia 8–12 @
 
 - [x] MVP: registro, rutinas, historial, progresión, estadísticas y PWA offline
 - [ ] Superseries (agrupar ejercicios)
-- [ ] Notas por ejercicio y por serie
+- [x] Notas por ejercicio y por entreno (viajan al resumen del entrenador)
+- [x] Sobrecarga visible: «Última vez», ▲/=/▼ por serie y resumen de ejercicios superados
+- [ ] Capa RPG (XP, nivel, atributos, hazañas, misiones): ver ~/proyectos/kepler/PLAN.md §11
 - [x] Registro de peso corporal con media semanal
 - [x] Ciclo con el entrenador: resumen semanal → análisis de Claude (`/entrenador`) → rutinas por enlace o QR
 - [ ] Medidas corporales, fuerza relativa y DOTS

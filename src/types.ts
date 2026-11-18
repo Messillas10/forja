@@ -106,6 +106,8 @@ export interface WorkoutExerciseMeta {
   repMax?: number
   targetRpe?: number
   restSec: number
+  /** Nota del atleta sobre este ejercicio en este entreno (sensaciones, máquina ocupada, molestias…). */
+  notes?: string
 }
 
 export interface BodyWeight {

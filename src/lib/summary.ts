@@ -2,6 +2,7 @@ import { MUSCLE_LABEL } from '../data/exercises'
 import { db } from '../db'
 import type { Muscle, WorkoutSet } from '../types'
 import { e1rm, SECONDARY_MUSCLE_FACTOR, sessionLoad, tonnage } from './formulas'
+import { compareExercise } from './overload'
 import { sessionE1rm, workingSets } from './progression'
 
 const DAY = 86400000
@@ -22,12 +23,13 @@ function setText(s: WorkoutSet, withWeight: boolean) {
 export async function buildSummary(days = 7, notes = ''): Promise<string> {
   const now = Date.now()
   const from = now - days * DAY
-  const [workouts, sets, exList, routines, weights] = await Promise.all([
+  const [workouts, sets, exList, routines, weights, metas] = await Promise.all([
     db.workouts.toArray(),
     db.sets.toArray(),
     db.exercises.toArray(),
     db.routines.toArray(),
     db.bodyweights.orderBy('date').toArray(),
+    db.workoutExercises.toArray(),
   ])
   const exercises = new Map(exList.map((e) => [e.id, e]))
   const finished = workouts.filter((w) => w.endedAt).sort((a, b) => a.startedAt - b.startedAt)
@@ -62,6 +64,7 @@ export async function buildSummary(days = 7, notes = ''): Promise<string> {
     const ws = setsBy(w.id!).sort((a, b) => a.exerciseOrder - b.exerciseOrder || a.setIndex - b.setIndex)
     const extra = [`${Math.round((w.endedAt! - w.startedAt) / 60000)} min`, w.sessionRpe ? `RPE sesión ${w.sessionRpe}` : null].filter(Boolean).join(', ')
     out.push(`### ${d(w.startedAt)} · ${w.name} (${extra})`)
+    if (w.notes?.trim()) out.push(`> Nota del atleta: ${w.notes.trim()}`)
     const orders = [...new Set(ws.map((s) => s.exerciseOrder))]
     for (const o of orders) {
       const group = ws.filter((s) => s.exerciseOrder === o)
@@ -70,7 +73,12 @@ export async function buildSummary(days = 7, notes = ''): Promise<string> {
       const warm = group.filter((s) => s.kind === 'warmup').length
       const main = group.filter((s) => s.kind !== 'warmup')
       const best = hasW && main.length ? ` → e1RM ${k(sessionE1rm(main))}` : ''
-      out.push(`- ${ex?.name ?? group[0].exerciseId}: ${main.map((s) => setText(s, hasW)).join(', ')}${warm ? ` (+${warm} calent.)` : ''}${best}`)
+      // Sobrecarga: frente a la sesión anterior de este ejercicio
+      const prevW = ex && [...finished].reverse().find((x) => x.startedAt < w.startedAt && setsBy(x.id!).some((s) => s.exerciseId === ex.id))
+      const verdict = ex && prevW ? compareExercise(group, setsBy(prevW.id!).filter((s) => s.exerciseId === ex.id), ex.type) : null
+      const vText = verdict ? ` [${{ up: 'superado', equal: 'igualado', down: 'por debajo' }[verdict]} vs. anterior]` : ''
+      const note = metas.find((m) => m.workoutId === w.id && m.exerciseOrder === o)?.notes?.trim()
+      out.push(`- ${ex?.name ?? group[0].exerciseId}: ${main.map((s) => setText(s, hasW)).join(', ')}${warm ? ` (+${warm} calent.)` : ''}${best}${vText}${note ? ` — nota: «${note}»` : ''}`)
     }
   }
   out.push('')

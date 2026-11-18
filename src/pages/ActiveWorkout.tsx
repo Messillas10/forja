@@ -8,6 +8,7 @@ import { MUSCLE_LABEL } from '../data/exercises'
 import { addExercisesToWorkout, db, deleteWorkout, exerciseHistory, finishWorkout, getActiveWorkout } from '../db'
 import { RPE_VALUES, tonnage, warmupSets } from '../lib/formulas'
 import { incrementFor, suggestNext, type Suggestion } from '../lib/progression'
+import { compareExercise, compareSet, formatSession, matchPrevious, type Verdict } from '../lib/overload'
 import { fmtClock, restTimer } from '../lib/restTimer'
 import type { Exercise, SetKind, Workout, WorkoutExerciseMeta, WorkoutSet } from '../types'
 
@@ -82,6 +83,9 @@ export default function ActiveWorkout() {
       {finishing && (
         <FinishSheet
           workout={workout}
+          metas={metas}
+          sets={sets}
+          exercises={exercises}
           setsDone={done.length}
           volume={tonnage(done)}
           onClose={() => setFinishing(false)}
@@ -136,6 +140,15 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
   const target = { repMin: meta.repMin ?? 8, repMax: meta.repMax ?? 12, targetRpe: meta.targetRpe }
   const suggestion = useMemo(() => (history ? suggestNext(ex, history, target) : null), [history, ex, target.repMin, target.repMax, target.targetRpe]) // eslint-disable-line react-hooks/exhaustive-deps
   const prev = history?.[0] ?? []
+  const prevWid = prev[0]?.workoutId
+  const prevMeta = useLiveQuery(
+    () => (prevWid ? db.workoutExercises.where('workoutId').equals(prevWid).filter((m) => m.exerciseId === ex.id).first() : undefined),
+    [prevWid, ex.id],
+  )
+  const prevDate = prev.reduce((t, s) => Math.max(t, s.completedAt ?? 0), 0)
+  const matched = matchPrevious(sets, prev)
+  const verdict = compareExercise(sets, prev, ex.type)
+  const [noting, setNoting] = useState(false)
   const showWeight = ex.type === 'weight_reps' || ex.type === 'weighted_bodyweight'
   const isDuration = ex.type === 'duration'
   const rowClass = isDuration ? 'duration' : showWeight ? '' : 'no-weight'
@@ -196,7 +209,11 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
             {MUSCLE_LABEL[ex.primary]}, {target.repMin}–{target.repMax} reps{target.targetRpe ? ` a RPE ${String(target.targetRpe).replace('.', ',')}` : ''}, descanso {fmtClock(meta.restSec)}
           </div>
         </div>
-        <span className="tiny muted num" style={{ fontSize: '0.95rem', paddingTop: 2 }}>{doneCount}/{sets.length}</span>
+        {verdict && doneCount === sets.length && sets.length > 0 ? (
+          <span className={`tag ${VERDICT_CLASS[verdict]}`} style={{ marginTop: 2 }}>{VERDICT_TEXT[verdict]}</span>
+        ) : (
+          <span className="tiny muted num" style={{ fontSize: '0.95rem', paddingTop: 2 }}>{doneCount}/{sets.length}</span>
+        )}
         <button className="icon-btn" style={{ marginTop: -8, marginRight: -6 }} onClick={() => setConfig((c) => !c)} aria-label="Ajustes del ejercicio" aria-expanded={config}><Icon name="more" /></button>
       </div>
 
@@ -227,6 +244,14 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
         </div>
       )}
 
+      {prev.length > 0 && (
+        <div className="last-time">
+          <span className="last-time-when">Última vez{prevDate ? ` · ${fmtDay(prevDate)}` : ''}</span>
+          <span className="last-time-sets">{formatSession(prev, ex.type)}</span>
+          {prevMeta?.notes && <span className="last-time-note">«{prevMeta.notes}»</span>}
+        </div>
+      )}
+
       {suggestion && <Target s={suggestion} showWeight={showWeight} />}
 
       <div className="sets" role="table" aria-label={`Series de ${ex.name}`}>
@@ -239,7 +264,7 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
           <span />
         </div>
         {sets.map((s, i) => {
-          const p = prev[s.setIndex]
+          const p = matched[i]
           const sug = s.kind === 'normal' ? suggestion : null
           return (
             <SetRow
@@ -247,6 +272,7 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
               s={s}
               label={labels[i]}
               prev={p}
+              cmp={s.done ? compareSet(s, p, ex.type) : null}
               placeholder={{ weight: sug?.weight || p?.weight, reps: sug?.reps || p?.reps, durationSec: p?.durationSec }}
               showWeight={showWeight}
               isDuration={isDuration}
@@ -259,10 +285,27 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
       <div className="row">
         <button className="btn grow" onClick={addSet}><Icon name="plus" />Añadir serie</button>
         {sets.length > 0 && <button className="btn" style={{ width: 52, padding: 0 }} onClick={removeLastSet} aria-label="Quitar la última serie"><Icon name="minus" /></button>}
+        <button className={`btn${meta.notes ? ' ink' : ''}`} style={{ padding: '0 14px' }} onClick={() => setNoting((n) => !n)} aria-expanded={noting}>Nota</button>
       </div>
+      {(noting || meta.notes) && (
+        <textarea
+          className="field"
+          style={{ color: 'var(--ink)' }}
+          rows={2}
+          placeholder="Para el entrenador: sensaciones, molestias, máquina ocupada, cambio de ejercicio…"
+          value={meta.notes ?? ''}
+          onChange={(e) => db.workoutExercises.update(meta.id!, { notes: e.target.value || undefined })}
+          aria-label={`Nota sobre ${ex.name}`}
+        />
+      )}
     </section>
   )
 }
+
+const VERDICT_TEXT: Record<Verdict, string> = { up: '▲ Superado', equal: '= Igualado', down: '▼ Por debajo' }
+const VERDICT_CLASS: Record<Verdict, string> = { up: 'up', equal: '', down: 'down' }
+const VERDICT_SET: Record<Verdict, string> = { up: 'Mejor que la vez anterior', equal: 'Igual que la vez anterior', down: 'Por debajo de la vez anterior' }
+const fmtDay = (t: number) => new Date(t).toLocaleDateString('es', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace(',', '')
 
 const ACTION_TEXT: Record<Suggestion['action'], string> = { subir: 'Sube', mantener: 'Mantén', bajar: 'Baja', descarga: 'Descarga', nuevo: 'Nuevo' }
 const ACTION_CLASS: Record<Suggestion['action'], string> = { subir: 'up', mantener: '', bajar: 'down', descarga: 'deload', nuevo: '' }
@@ -285,10 +328,11 @@ function Target({ s, showWeight }: { s: Suggestion; showWeight: boolean }) {
   )
 }
 
-function SetRow({ s, label, prev, placeholder, showWeight, isDuration, rowClass, restSec }: {
+function SetRow({ s, label, prev, cmp, placeholder, showWeight, isDuration, rowClass, restSec }: {
   s: WorkoutSet
   label: string
   prev?: WorkoutSet
+  cmp: ReturnType<typeof compareSet>
   placeholder: { weight?: number; reps?: number; durationSec?: number }
   showWeight: boolean
   isDuration: boolean
@@ -332,9 +376,16 @@ function SetRow({ s, label, prev, placeholder, showWeight, isDuration, rowClass,
       >
         {label}
       </button>
-      <button className="prev" disabled={!prev} onClick={() => prev && update({ weight: prev.weight, reps: prev.reps, durationSec: prev.durationSec })} aria-label={prev ? `Copiar la serie anterior: ${prevLabel}` : 'Sin serie anterior'} title={prevLabel}>
-        {prevText}
-      </button>
+      {cmp ? (
+        <span className={`beat ${cmp.verdict}`} title={`Antes: ${prevLabel}`} aria-label={`${VERDICT_SET[cmp.verdict]} (antes ${prevLabel}): ${cmp.detail ?? cmp.label}`}>
+          <span aria-hidden="true">{cmp.verdict === 'up' ? '▲' : cmp.verdict === 'down' ? '▼' : '='}</span>
+          {cmp.verdict !== 'equal' ? cmp.label : 'igual'}
+        </span>
+      ) : (
+        <button className="prev" disabled={!prev} onClick={() => prev && update({ weight: prev.weight, reps: prev.reps, durationSec: prev.durationSec })} aria-label={prev ? `Copiar la serie anterior: ${prevLabel}` : 'Sin serie anterior'} title={prevLabel}>
+          {prevText}
+        </button>
+      )}
       {showWeight && (
         <input className="cell" type="text" inputMode="decimal" value={shown(s.weight)} placeholder={placeholder.weight != null ? fmtKg(placeholder.weight) : ''} onFocus={select} onChange={(e) => update({ weight: num(e.target.value) })} aria-label="Peso en kg" />
       )}
@@ -361,12 +412,53 @@ const SESSION_RPE: [number, string][] = [
   [6, 'Duro'], [7, 'Muy duro'], [8, 'Muy duro'], [9, 'Casi al máximo'], [10, 'Máximo'],
 ]
 
-function FinishSheet({ workout, setsDone, volume, onClose, onConfirm }: { workout: Workout; setsDone: number; volume: number; onClose: () => void; onConfirm: (rpe?: number) => void }) {
+function FinishSheet({ workout, metas, sets, exercises, setsDone, volume, onClose, onConfirm }: {
+  workout: Workout
+  metas: WorkoutExerciseMeta[]
+  sets: WorkoutSet[]
+  exercises: Map<string, Exercise>
+  setsDone: number
+  volume: number
+  onClose: () => void
+  onConfirm: (rpe?: number) => void
+}) {
   const [rpe, setRpe] = useState<number | undefined>()
   const now = useNow(10000)
   const minutes = Math.round((now - workout.startedAt) / 60000)
+  const results = useLiveQuery(
+    () =>
+      Promise.all(
+        metas.map(async (m) => {
+          const ex = exercises.get(m.exerciseId)
+          if (!ex) return null
+          const [prev] = await exerciseHistory(ex.id, workout.id, 1)
+          const mine = sets.filter((s) => s.exerciseOrder === m.exerciseOrder)
+          if (!mine.some((s) => s.done)) return null
+          return { name: ex.name, verdict: prev ? compareExercise(mine, prev, ex.type) : null }
+        }),
+      ),
+    [metas, sets, exercises, workout.id],
+  )
+  const rows = (results ?? []).filter((r): r is { name: string; verdict: Verdict | null } => !!r)
+  const compared = rows.filter((r) => r.verdict)
+  const ups = compared.filter((r) => r.verdict === 'up')
   return (
     <Sheet title="Terminar entreno" onClose={onClose} fit>
+      {compared.length > 0 && (
+        <div className="beat-summary">
+          <div className="beat-summary-figure"><b>{ups.length}</b><span>/{compared.length}</span></div>
+          <div className="grow stack" style={{ gap: 6 }}>
+            <p className="beat-summary-title">{ups.length === compared.length ? 'Has superado todos los ejercicios' : ups.length ? `Has superado ${ups.length} de ${compared.length} ejercicios` : 'Hoy no has superado ninguno'}</p>
+            <ul className="beat-list">
+              {compared.map((r) => (
+                <li key={r.name} className={r.verdict!}>
+                  <span aria-hidden="true">{r.verdict === 'up' ? '▲' : r.verdict === 'down' ? '▼' : '='}</span> {r.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
       <div className="figures">
         <Figure value={`${minutes}′`} label="Duración" />
         <Figure value={fmtKg(volume)} label="kg movidos" />
@@ -384,6 +476,18 @@ function FinishSheet({ workout, setsDone, volume, onClose, onConfirm }: { workou
           ))}
         </div>
         <p className="small" style={{ minHeight: '1.4em' }}>{rpe ? SESSION_RPE[rpe - 1][1] : <span className="muted">Opcional</span>}</p>
+      </div>
+      <div className="stack" style={{ gap: 8 }}>
+        <h3 className="h2">¿Algo para el entrenador?</h3>
+        <textarea
+          className="field"
+          style={{ color: 'var(--ink)' }}
+          rows={3}
+          placeholder="Cómo te has sentido, qué has cambiado del plan y por qué, molestias, sueño…"
+          value={workout.notes ?? ''}
+          onChange={(e) => db.workouts.update(workout.id!, { notes: e.target.value || undefined })}
+          aria-label="Nota del entreno para el entrenador"
+        />
       </div>
       <button className="btn done lg block-w" onClick={() => onConfirm(rpe)}>Guardar entreno</button>
     </Sheet>
