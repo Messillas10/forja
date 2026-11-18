@@ -68,6 +68,8 @@ export function matchPrevious(sets: WorkoutSet[], prev: WorkoutSet[]): (WorkoutS
  * Veredicto de un ejercicio entero (solo series de trabajo hechas).
  * Superado: alguna serie mejora y ninguna empeora. Si hay de todo, decide el total
  * (tonelaje, o repeticiones/segundos si no hay peso).
+ * Con menos series de trabajo que la vez anterior no puede contar como superado (como mucho «igual»):
+ * así no se gana nada saltándose series, y una semana de 2 días con menos series no sale «por debajo».
  */
 export function compareExercise(sets: WorkoutSet[], prev: WorkoutSet[], type: ExerciseType): Verdict | null {
   const doneWork = sets.filter((s) => s.done && s.kind !== 'warmup')
@@ -77,6 +79,7 @@ export function compareExercise(sets: WorkoutSet[], prev: WorkoutSet[], type: Ex
   const v = doneWork.map((s, i) => compareSet(s, matched[i], type)?.verdict).filter(Boolean) as Verdict[]
   const ups = v.filter((x) => x === 'up').length
   const downs = v.filter((x) => x === 'down').length
+  if (doneWork.length < prevWork.length) return downs && !ups ? 'down' : 'equal'
   if (ups && !downs) return 'up'
   if (downs && !ups) return 'down'
   const total = (l: WorkoutSet[]) =>

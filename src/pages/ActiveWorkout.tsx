@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ExercisePicker } from '../components/ExercisePicker'
 import { Icon } from '../components/icons'
@@ -8,6 +8,9 @@ import { MUSCLE_LABEL } from '../data/exercises'
 import { addExercisesToWorkout, db, deleteWorkout, exerciseHistory, finishWorkout, getActiveWorkout } from '../db'
 import { RPE_VALUES, tonnage, warmupSets } from '../lib/formulas'
 import { incrementFor, suggestNext, type Suggestion } from '../lib/progression'
+import { Meter } from '../components/game'
+import { expToast, loadGameInput } from '../hooks/useGame'
+import { EXP, previewFinish } from '../lib/game'
 import { compareExercise, compareSet, formatSession, matchPrevious, type Verdict } from '../lib/overload'
 import { fmtClock, restTimer } from '../lib/restTimer'
 import type { Exercise, SetKind, Workout, WorkoutExerciseMeta, WorkoutSet } from '../types'
@@ -149,6 +152,15 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
   const matched = matchPrevious(sets, prev)
   const verdict = compareExercise(sets, prev, ex.type)
   const [noting, setNoting] = useState(false)
+  const complete = sets.length > 0 && sets.every((x) => x.done)
+  const beatAll = complete && verdict === 'up'
+  const prevBeat = useRef<boolean | undefined>(undefined)
+  useEffect(() => {
+    if (!history) return
+    // Solo avisa al pasar a «superado» mientras entrenas, no al abrir la pantalla
+    if (prevBeat.current === false && beatAll) setTimeout(() => expToast(`+${EXP.exercise} EXP · ${ex.name} superado`), 900)
+    prevBeat.current = beatAll
+  }, [beatAll, history, ex.name])
   const showWeight = ex.type === 'weight_reps' || ex.type === 'weighted_bodyweight'
   const isDuration = ex.type === 'duration'
   const rowClass = isDuration ? 'duration' : showWeight ? '' : 'no-weight'
@@ -273,6 +285,7 @@ function ExerciseBlock({ meta, ex, sets }: { meta: WorkoutExerciseMeta; ex: Exer
               label={labels[i]}
               prev={p}
               cmp={s.done ? compareSet(s, p, ex.type) : null}
+              type={ex.type}
               placeholder={{ weight: sug?.weight || p?.weight, reps: sug?.reps || p?.reps, durationSec: p?.durationSec }}
               showWeight={showWeight}
               isDuration={isDuration}
@@ -328,8 +341,9 @@ function Target({ s, showWeight }: { s: Suggestion; showWeight: boolean }) {
   )
 }
 
-function SetRow({ s, label, prev, cmp, placeholder, showWeight, isDuration, rowClass, restSec }: {
+function SetRow({ s, label, prev, cmp, type, placeholder, showWeight, isDuration, rowClass, restSec }: {
   s: WorkoutSet
+  type: Exercise['type']
   label: string
   prev?: WorkoutSet
   cmp: ReturnType<typeof compareSet>
@@ -358,6 +372,10 @@ function SetRow({ s, label, prev, cmp, placeholder, showWeight, isDuration, rowC
     await update(patch)
     navigator.vibrate?.(15)
     restTimer.start(restSec)
+    if (s.kind !== 'warmup') {
+      const c = compareSet({ ...s, ...patch }, prev, type)
+      if (c?.verdict === 'up') expToast(`+${EXP.set} EXP · ${c.label}`)
+    }
   }
 
   const prevText = prev
@@ -439,11 +457,31 @@ function FinishSheet({ workout, metas, sets, exercises, setsDone, volume, onClos
       ),
     [metas, sets, exercises, workout.id],
   )
+  const loot = useLiveQuery(async () => previewFinish(await loadGameInput(), workout.id!), [sets, metas, workout])
   const rows = (results ?? []).filter((r): r is { name: string; verdict: Verdict | null } => !!r)
   const compared = rows.filter((r) => r.verdict)
   const ups = compared.filter((r) => r.verdict === 'up')
   return (
     <Sheet title="Terminar entreno" onClose={onClose} fit>
+      {loot && loot.gained > 0 && (
+        <div className="loot" aria-label="Botín del entreno">
+          <div className="loot-top">
+            <span className="loot-gain">+{loot.gained}</span>
+            <span className="lab-label">EXP de este entreno</span>
+          </div>
+          {loot.levelUp && <p className="level-up">¡Subes a nivel {loot.after.level}!</p>}
+          <Meter value={loot.after.progress} label="Experiencia hacia el siguiente nivel" />
+          <div className="char-exp" style={{ marginTop: -4 }}>
+            <span>NV {loot.after.level}</span>
+            <span>{loot.after.into} / {loot.after.need} EXP</span>
+          </div>
+          <ul className="loot-list">
+            {loot.parts.map((p) => <li key={p.label}><span>{p.label}</span><b>+{p.exp}</b></li>)}
+            {loot.newFeats.map((f) => <li key={f.id}><span>Hito: {f.title}</span><b>+{EXP.feat}</b></li>)}
+          </ul>
+          {!workout.notes && <p className="tiny muted">Deja una nota para el entrenador abajo: +{EXP.note} EXP.</p>}
+        </div>
+      )}
       {compared.length > 0 && (
         <div className="beat-summary">
           <div className="beat-summary-figure"><b>{ups.length}</b><span>/{compared.length}</span></div>

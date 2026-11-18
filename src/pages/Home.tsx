@@ -1,8 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useNavigate } from 'react-router-dom'
+import { CharacterCard } from '../components/game'
 import { Icon } from '../components/icons'
 import { cap } from '../components/ui'
 import { db, getActiveWorkout, startWorkout } from '../db'
+import { useGame } from '../hooks/useGame'
 import type { Routine, Workout } from '../types'
 
 const DAY = 86400000
@@ -38,6 +40,7 @@ function nextRoutine(routines: Routine[], workouts: Workout[]): Routine | undefi
 
 export default function Home() {
   const navigate = useNavigate()
+  const game = useGame()
   const data = useLiveQuery(async () => ({
     active: (await getActiveWorkout()) ?? null,
     routines: await db.routines.toArray(),
@@ -88,6 +91,8 @@ export default function Home() {
           </>
         )}
       </section>
+
+      {game && <CharacterCard g={game} />}
 
       <section className="section" aria-label="Esta semana">
         <div className="section-head">

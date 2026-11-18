@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Icon, type IconName } from './components/icons'
+import { ExpToast } from './components/game'
 import { RestBar } from './components/ui'
 import { syncSeedExercises } from './db'
 import ActiveWorkout from './pages/ActiveWorkout'
+import Character from './pages/Character'
 import Coach, { ImportRoutines } from './pages/Coach'
 import { ExerciseDetail, ExerciseList } from './pages/Exercises'
 import { HistoryList, WorkoutDetail } from './pages/History'
@@ -41,6 +43,7 @@ function Shell() {
         <Route path="/progreso" element={<Progress />} />
         <Route path="/herramientas" element={<Tools />} />
         <Route path="/entrenador" element={<Coach />} />
+        <Route path="/personaje" element={<Character />} />
         <Route path="/importar/:code" element={<ImportRoutines />} />
       </Routes>
       {tabs && (
@@ -56,6 +59,7 @@ function Shell() {
         </div>
       )}
       <RestBar />
+      <ExpToast />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { MUSCLE_LABEL } from '../data/exercises'
 import { db } from '../db'
 import type { Muscle, WorkoutSet } from '../types'
 import { e1rm, SECONDARY_MUSCLE_FACTOR, sessionLoad, tonnage } from './formulas'
+import { computeGame } from './game'
 import { compareExercise } from './overload'
 import { sessionE1rm, workingSets } from './progression'
 
@@ -55,6 +56,13 @@ export async function buildSummary(days = 7, notes = ''): Promise<string> {
   const withRpe = inPeriod.filter((w) => w.sessionRpe)
   if (withRpe.length)
     out.push(`- Carga sRPE total: ${Math.round(withRpe.reduce((a, w) => a + sessionLoad(w.sessionRpe!, (w.endedAt! - w.startedAt) / 60000), 0))} UA (RPE sesión medio ${k(withRpe.reduce((a, w) => a + w.sessionRpe!, 0) / withRpe.length)})`)
+  out.push('')
+
+  // Personaje (capa de juego de Forja)
+  const g = computeGame({ workouts, sets, exercises, metas, routines }, now)
+  out.push('## Personaje')
+  out.push(`- Nivel ${g.level} (${g.exp} EXP) · racha ${g.streak.current} semanas · ${g.attributes.map((a) => `${a.label} NV ${a.level} (${a.value})`).join(' · ')}`)
+  out.push(`- Misiones de la semana: ${g.missions.map((m) => `${m.done ? '✔' : '○'} ${m.title}`).join(' · ')}`)
   out.push('')
 
   // Sesiones

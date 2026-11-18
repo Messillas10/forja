@@ -19,6 +19,7 @@ const P = {
   trophy: 'M8 4h8v6a4 4 0 0 1-8 0zM8 6H4v2a3 3 0 0 0 4 3M16 6h4v2a3 3 0 0 1-4 3M12 14v4M8 20h8',
   edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
   play: 'M7 5l12 7-12 7z',
+  flask: 'M9 3h6M10 3v6L4.5 18.5A1.6 1.6 0 0 0 5.9 21h12.2a1.6 1.6 0 0 0 1.4-2.5L14 9V3M7 15h10',
 }
 
 export type IconName = keyof typeof P

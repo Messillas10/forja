@@ -54,8 +54,10 @@ describe('compareExercise', () => {
     expect(compareExercise([s(60, 10), s(60, 8), s(60, 6)], prev, 'weight_reps')).toBe('up')
     expect(compareExercise([s(60, 9), s(60, 6), s(60, 6)], prev, 'weight_reps')).toBe('down')
   })
-  it('ignora series sin marcar', () => {
-    expect(compareExercise([s(60, 9), s(60, 1, { done: false })], prev, 'weight_reps')).toBe('up')
+  it('ignora series sin marcar, pero con menos series no cuenta como superado', () => {
+    expect(compareExercise([s(60, 9), s(60, 1, { done: false })], prev, 'weight_reps')).toBe('equal')
+    expect(compareExercise([s(60, 9), s(60, 9), s(60, 8), s(60, 1, { done: false })], prev, 'weight_reps')).toBe('up')
+    expect(compareExercise([s(60, 6), s(60, 6)], prev, 'weight_reps')).toBe('down')
   })
 })
 
