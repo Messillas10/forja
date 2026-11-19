@@ -170,7 +170,7 @@ function BodyWeightCard() {
             {delta != null && <Figure value={`${delta >= 0 ? '+' : '−'}${fmtKg(Math.abs(delta))}`} label="Frente a la semana anterior" />}
           </div>
         ) : (
-          <p className="small muted">Pésate en ayunas, después de ir al baño, varias veces por semana. Lo que cuenta es la media.</p>
+          <p className="small muted">Pésate en la báscula del gimnasio antes de entrenar, siempre en las mismas condiciones. Al empezar un entreno, Forja te lo pregunta. Lo que cuenta es la media de la semana.</p>
         )}
         {points.length >= 2 && <LineChart points={points} unit="kg" height={120} />}
         {weights.length > 0 && (

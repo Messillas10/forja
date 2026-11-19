@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { cancelBeeps, scheduleRestEnd } from './beep'
 
 /**
  * Temporizador de descanso global. Guarda la hora de fin (no un contador), así sigue siendo
@@ -36,14 +37,23 @@ function set(next: State) {
 export const restTimer = {
   start(seconds: number) {
     if (seconds <= 0) return
-    set({ endAt: Date.now() + seconds * 1000, total: seconds })
+    const endAt = Date.now() + seconds * 1000
+    set({ endAt, total: seconds })
+    scheduleRestEnd(endAt)
   },
   add(seconds: number) {
     if (!state.endAt) return
     const endAt = Math.max(Date.now(), state.endAt + seconds * 1000)
     set({ endAt, total: Math.max(1, state.total + seconds) })
+    scheduleRestEnd(endAt)
   },
+  /** Parar a mano (Saltar, terminar entreno): cancela también el pitido pendiente. */
   stop() {
+    cancelBeeps()
+    set({ endAt: null, total: 0 })
+  },
+  /** Fin natural: no cancela el pitido, que está sonando justo ahora. */
+  finish() {
     set({ endAt: null, total: 0 })
   },
 }
@@ -68,7 +78,7 @@ export function useRestTimer() {
         } catch {
           /* sin vibración */
         }
-        restTimer.stop()
+        restTimer.finish()
       }
     }, 250)
     return () => clearInterval(id)

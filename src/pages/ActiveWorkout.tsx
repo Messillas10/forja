@@ -49,6 +49,7 @@ export default function ActiveWorkout() {
     <>
       <WorkoutHeader workout={workout} volume={tonnage(done)} setsDone={done.length} setsTotal={work.length} onFinish={() => setFinishing(true)} />
       <div className="page flush-top" style={{ gap: 14, paddingTop: 14, paddingBottom: 'calc(110px + var(--safe-b))' }}>
+        <WeighInPrompt />
         {metas.map((m) => {
           const ex = exercises.get(m.exerciseId)
           if (!ex) return null
@@ -100,6 +101,66 @@ export default function ActiveWorkout() {
         />
       )}
     </>
+  )
+}
+
+const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString('sv-SE')
+const SKIP_KEY = 'forja.peso.omitido'
+
+/**
+ * Pesaje en el gimnasio, antes de entrenar: siempre en las mismas condiciones (misma báscula, misma hora
+ * aproximada, ropa parecida). No hace falta ayunas: lo que cuenta es que sea comparable y la media semanal.
+ * Solo aparece si hoy no hay pesaje y no lo has omitido.
+ */
+function WeighInPrompt() {
+  const today = dayKey()
+  const weighed = useLiveQuery(() => db.bodyweights.where('date').aboveOrEqual(new Date(today + 'T00:00').getTime()).count(), [today])
+  const [kg, setKg] = useState('')
+  const [skipped, setSkipped] = useState(() => {
+    try {
+      return localStorage.getItem(SKIP_KEY) === today
+    } catch {
+      return false
+    }
+  })
+  if (weighed === undefined || weighed > 0 || skipped) return null
+  const value = Number(kg.replace(',', '.'))
+  const valid = value >= 25 && value <= 300
+
+  return (
+    <form
+      className="block"
+      style={{ gap: 8 }}
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (!valid) return
+        await db.bodyweights.add({ date: Date.now(), kg: value })
+        navigator.vibrate?.(15)
+      }}
+    >
+      <div className="row between">
+        <b>Peso de hoy</b>
+        <button
+          type="button"
+          className="btn quiet sm"
+          onClick={() => {
+            try {
+              localStorage.setItem(SKIP_KEY, today)
+            } catch {
+              /* ignorar */
+            }
+            setSkipped(true)
+          }}
+        >
+          Hoy no
+        </button>
+      </div>
+      <div className="row">
+        <input className="field grow num" inputMode="decimal" placeholder="kg en la báscula del gimnasio" value={kg} onChange={(e) => setKg(e.target.value)} aria-label="Peso de hoy en kg" />
+        <button className="btn ink" disabled={!valid}>Guardar</button>
+      </div>
+      <span className="small muted">Antes de entrenar y siempre igual (misma báscula, ropa parecida). Cuenta la media de la semana, no el número de un día.</span>
+    </form>
   )
 }
 
