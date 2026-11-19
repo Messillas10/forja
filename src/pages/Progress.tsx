@@ -138,11 +138,12 @@ function BodyWeightCard() {
   const [kg, setKg] = useState('')
   const [now] = useState(() => Date.now())
   if (!weights) return null
+  const normal = weights.filter((w) => !w.cond || w.cond === 'normal')
   const avg = (l: number[]) => (l.length ? l.reduce((a, b) => a + b, 0) / l.length : null)
-  const thisWeek = avg(weights.filter((w) => w.date > now - 7 * DAY).map((w) => w.kg))
-  const prevWeek = avg(weights.filter((w) => w.date <= now - 7 * DAY && w.date > now - 14 * DAY).map((w) => w.kg))
+  const thisWeek = avg(normal.filter((w) => w.date > now - 7 * DAY).map((w) => w.kg))
+  const prevWeek = avg(normal.filter((w) => w.date <= now - 7 * DAY && w.date > now - 14 * DAY).map((w) => w.kg))
   const weekly = new Map<number, number[]>()
-  for (const w of weights) {
+  for (const w of normal) {
     const wk = startOfWeek(w.date)
     weekly.set(wk, [...(weekly.get(wk) ?? []), w.kg])
   }
@@ -178,7 +179,7 @@ function BodyWeightCard() {
             <summary>Registros ({weights.length})</summary>
             {[...weights].reverse().slice(0, 30).map((w) => (
               <div key={w.id} className="row between small" style={{ padding: '4px 0' }}>
-                <span>{new Date(w.date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}, <b className="num" style={{ fontSize: '1rem' }}>{fmtKg(w.kg)}</b> kg</span>
+                <span>{new Date(w.date).toLocaleDateString('es', { day: 'numeric', month: 'short' })}, <b className="num" style={{ fontSize: '1rem' }}>{fmtKg(w.kg)}</b> kg{w.cond === 'ayunas' ? ' · en ayunas' : w.cond === 'comido' ? ' · recién comido' : ''}</span>
                 <button className="btn danger sm" onClick={() => db.bodyweights.delete(w.id!)}>Borrar</button>
               </div>
             ))}

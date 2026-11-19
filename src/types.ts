@@ -110,9 +110,14 @@ export interface WorkoutExerciseMeta {
   notes?: string
 }
 
+/** Cómo venías al pesarte. Solo los «normales» (o sin marcar, los antiguos) cuentan para la media y el ritmo. */
+export type WeighCond = 'normal' | 'ayunas' | 'comido'
+
 export interface BodyWeight {
   id?: number
   /** Marca de tiempo de la medición. */
   date: number
   kg: number
+  /** Condiciones del pesaje; sin valor = normal. */
+  cond?: WeighCond
 }

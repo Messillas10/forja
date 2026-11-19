@@ -13,7 +13,7 @@ import { expToast, loadGameInput } from '../hooks/useGame'
 import { EXP, previewFinish } from '../lib/game'
 import { compareExercise, compareSet, formatSession, matchPrevious, type Verdict } from '../lib/overload'
 import { fmtClock, restTimer } from '../lib/restTimer'
-import type { Exercise, SetKind, Workout, WorkoutExerciseMeta, WorkoutSet } from '../types'
+import type { Exercise, SetKind, WeighCond, Workout, WorkoutExerciseMeta, WorkoutSet } from '../types'
 
 const KIND_ORDER: SetKind[] = ['normal', 'warmup', 'drop', 'failure']
 const KIND_LABEL: Record<SetKind, string> = { normal: '', warmup: 'C', drop: 'D', failure: 'F' }
@@ -106,6 +106,7 @@ export default function ActiveWorkout() {
 
 const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString('sv-SE')
 const SKIP_KEY = 'forja.peso.omitido'
+const COND_OPTS: [WeighCond, string][] = [['normal', 'Lo normal'], ['ayunas', 'En ayunas'], ['comido', 'Recién comido']]
 
 /**
  * Pesaje en el gimnasio, antes de entrenar: siempre en las mismas condiciones (misma báscula, misma hora
@@ -116,6 +117,7 @@ function WeighInPrompt() {
   const today = dayKey()
   const weighed = useLiveQuery(() => db.bodyweights.where('date').aboveOrEqual(new Date(today + 'T00:00').getTime()).count(), [today])
   const [kg, setKg] = useState('')
+  const [cond, setCond] = useState<WeighCond>('normal')
   const [skipped, setSkipped] = useState(() => {
     try {
       return localStorage.getItem(SKIP_KEY) === today
@@ -134,7 +136,7 @@ function WeighInPrompt() {
       onSubmit={async (e) => {
         e.preventDefault()
         if (!valid) return
-        await db.bodyweights.add({ date: Date.now(), kg: value })
+        await db.bodyweights.add({ date: Date.now(), kg: value, ...(cond !== 'normal' && { cond }) })
         navigator.vibrate?.(15)
       }}
     >
@@ -155,11 +157,22 @@ function WeighInPrompt() {
           Hoy no
         </button>
       </div>
+      <div className="row" role="radiogroup" aria-label="Cómo vienes">
+        {COND_OPTS.map(([v, label]) => (
+          <button key={v} type="button" role="radio" aria-checked={cond === v} className={`btn sm grow ${cond === v ? 'ink' : 'quiet'}`} onClick={() => setCond(v)}>
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="row">
         <input className="field grow num" inputMode="decimal" placeholder="kg en la báscula del gimnasio" value={kg} onChange={(e) => setKg(e.target.value)} aria-label="Peso de hoy en kg" />
         <button className="btn ink" disabled={!valid}>Guardar</button>
       </div>
-      <span className="small muted">Antes de entrenar y siempre igual (misma báscula, ropa parecida). Cuenta la media de la semana, no el número de un día.</span>
+      <span className="small muted">
+        {cond === 'normal'
+          ? 'Lo normal: después de clase, antes de entrenar, en la báscula del gimnasio. Solo estos cuentan para la media y el ritmo.'
+          : 'Se guarda como referencia, pero no cuenta para la media ni el ritmo: en ayunas o recién comido el peso cambia 0,5-2 kg.'}
+      </span>
     </form>
   )
 }
